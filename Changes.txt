@@ -1,0 +1,120 @@
+1.1 The pipeline
+    the C-like language should be called ylang. file extension should be .y and the compiler ylangc. ylangc should only thanslate Y to sra8 asm.
+    Remove commands:
+        sra8-ar
+        sra8-emu
+        sra8-upload
+
+2.6 ALU
+    The subc instruction is now repaired and is implemented as it should be in the verilog files.
+    MOVS`, `MVN`, `MVNS have been removed
+
+2.12 Loader
+    This is not a final protocol. It was just a temporary tool.
+
+3 asm
+    ; should be the only allowed comment syntax in asm
+    only .import and .export, no global / extern
+    implicit import is not allowed
+    weak / strong symbols not allowed.
+    no .equ or .set
+    =label and #imm stay, =label +- const is allowed, other expressions are not, no current address operator
+
+    no lo or hi operators
+    no pseudo instructions
+
+    Sections
+        .code [optional section name]
+        .data [optional section name]
+        .bss [optional section name]
+
+        no other types allowed
+        .org and .align not supported here, linker will take care of This
+
+    no .incbin, no new preprocessor directives
+
+    no --image
+
+    obj file can be json
+
+    simplify the linker script syntax so it has only what it needs and the syntax is clean.
+
+    
+7 The y language
+
+    include recursion with stack pointer in r14a
+    include structs and unions
+    include integer promotion.
+    data types int8 to int32 with unsigned variants as well
+    support pointers and arrays and ptrs to ptrs, arrays of arrays etc
+        syntax and semantics will be different than in c.
+            
+            int a = 9;
+            int* b = &a;
+            int c = [b];
+
+            int8[]
+
+            int[3] d = {1, 2, 3};
+            int[3]* e = &d;
+
+            int[3] f = [e]; // size must be matching
+              
+            int g = d[1];
+            int* h = &d[1];
+            int[] i = &d; // int[N]* is automatically converted to 
+
+            f = i; // error, i is a pointer type
+            g = [i]; // error, collection pointer cannot be dereferenced like this.
+            g = i[1]; //ok
+             
+
+            int8[N][M]*[K] is array of K elements of type pointer to an array of M elements of arrays of N elements of int8s
+
+            'T[N] x' supports: 
+                x[n] - T
+                &x[n] - T*
+                &x - T[N]*
+
+            
+            T[] can be assigned T[N]* without explicit conversion
+            T* can be assigned T[] or T[N]* without explicit conversion
+            Pointer arithmetic allowed only on T*
+
+            
+        Casting: 
+            
+            @cast(T, x)
+            explicit casting required everywhere where implicit cast is not allowed
+
+            Implicit cast rules:
+                smaller integer type assigned to larger one, when signedness matches
+                T[N]* assigned to T[]
+
+
+        Arrays with length given by initial value:
+            int8[@n] x = {1, 2, 3}
+        Strings:
+            string is a null terminated array of chars
+            char[@n] x = "Hello."
+            Static string literal:
+                char[@n]* x = s"Hello."
+                char[] y = s"Hello."[]
+
+                [buffer][8]
+
+        Builtin functions / operators:
+            @as(T)
+            @sizeof(T)
+            @n - length of assign literal
+            
+
+
+
+
+
+
+    support switch
+
+
+

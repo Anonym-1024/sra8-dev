@@ -1,0 +1,211 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SRA-8 Assembly",
+  "scopeName": "source.sra8asm",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#label-definition"
+    },
+    {
+      "include": "#directive"
+    },
+    {
+      "include": "#mnemonic"
+    },
+    {
+      "include": "#register"
+    },
+    {
+      "include": "#label-reference"
+    },
+    {
+      "include": "#immediate"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#alias"
+    },
+    {
+      "include": "#invalid-comment"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.sra8asm",
+      "match": ";.*$"
+    },
+    "invalid-comment": {
+      "name": "invalid.illegal.comment.sra8asm",
+      "match": "//.*$|/\\*"
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "match": "^\\s*(!DEFINE)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.sra8asm"
+            },
+            "2": {
+              "name": "entity.name.function.preprocessor.sra8asm"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(!INCLUDE)\\s+([^;]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.include.sra8asm"
+            },
+            "2": {
+              "name": "string.unquoted.include.sra8asm"
+            }
+          }
+        }
+      ]
+    },
+    "alias": {
+      "name": "entity.name.function.preprocessor.sra8asm",
+      "match": "![A-Za-z_][A-Za-z0-9_]*"
+    },
+    "string": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sra8asm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.sra8asm",
+              "match": "\\\\[ntr0\\\\'\\\"]"
+            },
+            {
+              "name": "invalid.illegal.escape.sra8asm",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "constant.character.sra8asm",
+          "match": "#?\\s*'(?:\\\\[ntr0\\\\'\\\"]|[^'\\\\])'"
+        }
+      ]
+    },
+    "label-definition": {
+      "patterns": [
+        {
+          "match": "(\\.l)\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.local.sra8asm"
+            },
+            "2": {
+              "name": "entity.name.label.local.sra8asm"
+            },
+            "3": {
+              "name": "punctuation.separator.label.sra8asm"
+            }
+          }
+        },
+        {
+          "match": "(?<![=.\\w])([A-Za-z_][A-Za-z0-9_.]*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.label.sra8asm"
+            },
+            "2": {
+              "name": "punctuation.separator.label.sra8asm"
+            }
+          }
+        }
+      ]
+    },
+    "directive": {
+      "patterns": [
+        {
+          "match": "(\\.(?:code|data|bss))\\b(?:[ \\t]+([A-Za-z_][A-Za-z0-9_.]*))?",
+          "captures": {
+            "1": {
+              "name": "keyword.control.section.sra8asm"
+            },
+            "2": {
+              "name": "entity.name.section.sra8asm"
+            }
+          }
+        },
+        {
+          "match": "(\\.(?:import|export))\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.import.sra8asm"
+            }
+          }
+        },
+        {
+          "name": "storage.type.directive.sra8asm",
+          "match": "\\.(?:byte|word|dword|qword|addr|ascii|asciz|res)\\b"
+        },
+        {
+          "name": "invalid.illegal.removed-directive.sra8asm",
+          "match": "\\.(?:org|align|balign|global|globl|extern|weak|equ|set|section|text|rodata|incbin|fill|space)\\b"
+        },
+        {
+          "name": "storage.modifier.direction.sra8asm",
+          "match": "\\.[bf](?=\\s*=)"
+        }
+      ]
+    },
+    "mnemonic": {
+      "name": "keyword.mnemonic.sra8asm",
+      "match": "(?i)\\b(?:intpcr|intpcw|addcd|addcs|intrr|intrw|ptbrr|ptbrw|subcd|subcs|addc|adds|andd|ands|asrd|asrs|csld|csls|csrd|csrs|eord|eors|lsld|lsls|lsrd|lsrs|mova|psrr|psrw|subc|subs|xpcr|xpcw|add|and|asr|brl|cmn|cmp|csl|csr|eor|ldr|lsl|lsr|mov|ord|ors|pcr|pcw|ptr|ptw|str|sub|svc|br|or)(?:\\.(?:ges|geu|nvr|ses|seu|al|eq|gs|gu|mi|ne|pl|ss|su|vc|vs))?\\b"
+    },
+    "register": {
+      "patterns": [
+        {
+          "name": "variable.language.register.pair.sra8asm",
+          "match": "(?i)\\br(?:1[0-5]|[0-9])a\\b"
+        },
+        {
+          "name": "variable.language.register.sra8asm",
+          "match": "(?i)\\br(?:1[0-5]|[0-9])\\b"
+        }
+      ]
+    },
+    "label-reference": {
+      "match": "(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)(?:\\s*([+-])\\s*((?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b))?",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.address.sra8asm"
+        },
+        "2": {
+          "name": "variable.other.label.sra8asm"
+        },
+        "3": {
+          "name": "keyword.operator.arithmetic.sra8asm"
+        },
+        "4": {
+          "name": "constant.numeric.sra8asm"
+        }
+      }
+    },
+    "immediate": {
+      "name": "constant.numeric.immediate.sra8asm",
+      "match": "#\\s*[+-]?(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.sra8asm",
+      "match": "(?<![\\w.])[+-]?(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b"
+    }
+  }
+}

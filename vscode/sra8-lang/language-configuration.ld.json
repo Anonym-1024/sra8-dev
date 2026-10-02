@@ -1,0 +1,17 @@
+{
+  "comments": {
+    "lineComment": ";"
+  },
+  "brackets": [],
+  "folding": {
+    "markers": {
+      "start": "^\\s*place\\b",
+      "end": "^\\s*end\\b"
+    }
+  },
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*place\\b",
+    "decreaseIndentPattern": "^\\s*end\\b"
+  },
+  "wordPattern": "[A-Za-z_][A-Za-z0-9_.]*|(?:0[xXbB])?[0-9A-Fa-f]+"
+}

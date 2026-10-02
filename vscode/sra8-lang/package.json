@@ -1,0 +1,53 @@
+{
+  "name": "sra8-lang",
+  "displayName": "SRA-8 Assembly and Linker Script",
+  "description": "Syntax highlighting for SRA-8 assembly (.s) and sra8-ld linker scripts (.ld).",
+  "version": "0.1.0",
+  "publisher": "sra8-dev",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sra8-asm",
+        "aliases": [
+          "SRA-8 Assembly",
+          "sra8asm"
+        ],
+        "extensions": [
+          ".s",
+          ".inc"
+        ],
+        "configuration": "./language-configuration.asm.json"
+      },
+      {
+        "id": "sra8-ld",
+        "aliases": [
+          "SRA-8 Linker Script",
+          "sra8ld"
+        ],
+        "extensions": [
+          ".ld"
+        ],
+        "configuration": "./language-configuration.ld.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sra8-asm",
+        "scopeName": "source.sra8asm",
+        "path": "./syntaxes/sra8-asm.tmLanguage.json"
+      },
+      {
+        "language": "sra8-ld",
+        "scopeName": "source.sra8ld",
+        "path": "./syntaxes/sra8-ld.tmLanguage.json"
+      }
+    ]
+  }
+}

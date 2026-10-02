@@ -1,0 +1,14 @@
+# clangd settings for the SRA-8 tools: every source and header is C23,
+# with the warnings of the Makefile.
+If:
+  PathMatch: [src/.*\.c, src/.*\.h, src/.*\.inc]
+CompileFlags:
+  Add:
+    - -xc
+    - -std=c23
+    - -Wall
+    - -Wextra
+    - -Wpedantic
+    - -Wshadow
+    - -Wconversion
+    - -Wno-sign-conversion

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SRA-8 Linker Script",
+  "scopeName": "source.sra8ld",
+  "patterns": [
+    {
+      "name": "comment.line.semicolon.sra8ld",
+      "match": ";.*$"
+    },
+    {
+      "match": "^\\s*(memory)\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.memory.sra8ld"
+        },
+        "2": {
+          "name": "entity.name.type.region.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "^\\s*(place)\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.place.sra8ld"
+        },
+        "2": {
+          "name": "entity.name.type.region.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "^\\s*(end)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.end.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "^\\s*(code|data|bss)\\b(?:[ \\t]+(?:(\\*)|([A-Za-z_][A-Za-z0-9_.]*)))?",
+      "captures": {
+        "1": {
+          "name": "storage.type.section.sra8ld"
+        },
+        "2": {
+          "name": "keyword.operator.wildcard.sra8ld"
+        },
+        "3": {
+          "name": "entity.name.section.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "^\\s*(align)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.other.align.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "^\\s*(symbol)\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.symbol.sra8ld"
+        },
+        "2": {
+          "name": "variable.other.symbol.sra8ld"
+        }
+      }
+    },
+    {
+      "match": "\\b(start|size|last)\\b(?:\\s+([A-Za-z_][A-Za-z0-9_.]*))?",
+      "captures": {
+        "1": {
+          "name": "keyword.other.sra8ld"
+        },
+        "2": {
+          "name": "entity.name.type.region.sra8ld"
+        }
+      }
+    },
+    {
+      "name": "keyword.operator.assignment.sra8ld",
+      "match": "="
+    },
+    {
+      "name": "constant.numeric.sra8ld",
+      "match": "\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|[0-9]+)\\b"
+    }
+  ]
+}
