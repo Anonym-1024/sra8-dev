@@ -75,7 +75,6 @@ def asm_grammar() -> dict:
                 {"name": "storage.type.directive.sra8asm",
                  "match": r"\.(?:byte|word|dword|qword|addr|ascii|asciz|res)\b"},
                 {"name": "invalid.illegal.removed-directive.sra8asm", "match": r"\.(?:" + REMOVED + r")\b"},
-                {"name": "storage.modifier.direction.sra8asm", "match": r"\.[bf](?=\s*=)"},
             ]},
             "mnemonic": {
                 "name": "keyword.mnemonic.sra8asm",
@@ -85,13 +84,21 @@ def asm_grammar() -> dict:
                 {"name": "variable.language.register.pair.sra8asm", "match": r"(?i)\br(?:1[0-5]|[0-9])a\b"},
                 {"name": "variable.language.register.sra8asm", "match": r"(?i)\br(?:1[0-5]|[0-9])\b"},
             ]},
-            "label-reference": {
-                "match": r"(=)\s*(" + IDENT + r")(?:\s*([+-])\s*(" + NUM_BODY + "))?",
-                "captures": {"1": {"name": "keyword.operator.address.sra8asm"},
-                             "2": {"name": "variable.other.label.sra8asm"},
-                             "3": {"name": "keyword.operator.arithmetic.sra8asm"},
-                             "4": {"name": "constant.numeric.sra8asm"}},
-            },
+            # A reference is coloured like the definition it refers to:
+            # .b =name / .f =name like ".l name:", =name like "name:".
+            "label-reference": {"patterns": [
+                {"match": r"(\.[bf])\s+(=)\s*(" + IDENT + r")(?:\s*([+-])\s*(" + NUM_BODY + "))?",
+                 "captures": {"1": {"name": "storage.modifier.local.sra8asm"},
+                              "2": {"name": "keyword.operator.address.sra8asm"},
+                              "3": {"name": "entity.name.label.local.sra8asm"},
+                              "4": {"name": "keyword.operator.arithmetic.sra8asm"},
+                              "5": {"name": "constant.numeric.sra8asm"}}},
+                {"match": r"(=)\s*(" + IDENT + r")(?:\s*([+-])\s*(" + NUM_BODY + "))?",
+                 "captures": {"1": {"name": "keyword.operator.address.sra8asm"},
+                              "2": {"name": "entity.name.function.label.sra8asm"},
+                              "3": {"name": "keyword.operator.arithmetic.sra8asm"},
+                              "4": {"name": "constant.numeric.sra8asm"}}},
+            ]},
             "immediate": {"name": "constant.numeric.immediate.sra8asm", "match": r"#\s*" + NUM},
             "number": {"name": "constant.numeric.sra8asm", "match": r"(?<![\w.])" + NUM},
         },

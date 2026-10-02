@@ -159,10 +159,6 @@
         {
           "name": "invalid.illegal.removed-directive.sra8asm",
           "match": "\\.(?:org|align|balign|global|globl|extern|weak|equ|set|section|text|rodata|incbin|fill|space)\\b"
-        },
-        {
-          "name": "storage.modifier.direction.sra8asm",
-          "match": "\\.[bf](?=\\s*=)"
         }
       ]
     },
@@ -183,21 +179,45 @@
       ]
     },
     "label-reference": {
-      "match": "(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)(?:\\s*([+-])\\s*((?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b))?",
-      "captures": {
-        "1": {
-          "name": "keyword.operator.address.sra8asm"
+      "patterns": [
+        {
+          "match": "(\\.[bf])\\s+(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)(?:\\s*([+-])\\s*((?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b))?",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.local.sra8asm"
+            },
+            "2": {
+              "name": "keyword.operator.address.sra8asm"
+            },
+            "3": {
+              "name": "entity.name.label.local.sra8asm"
+            },
+            "4": {
+              "name": "keyword.operator.arithmetic.sra8asm"
+            },
+            "5": {
+              "name": "constant.numeric.sra8asm"
+            }
+          }
         },
-        "2": {
-          "name": "variable.other.label.sra8asm"
-        },
-        "3": {
-          "name": "keyword.operator.arithmetic.sra8asm"
-        },
-        "4": {
-          "name": "constant.numeric.sra8asm"
+        {
+          "match": "(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)(?:\\s*([+-])\\s*((?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b))?",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.address.sra8asm"
+            },
+            "2": {
+              "name": "entity.name.function.label.sra8asm"
+            },
+            "3": {
+              "name": "keyword.operator.arithmetic.sra8asm"
+            },
+            "4": {
+              "name": "constant.numeric.sra8asm"
+            }
+          }
         }
-      }
+      ]
     },
     "immediate": {
       "name": "constant.numeric.immediate.sra8asm",
