@@ -76,7 +76,7 @@
       ]
     },
     "alias": {
-      "name": "entity.name.function.preprocessor.sra8asm",
+      "name": "keyword.control.directive.define.sra8asm",
       "match": "![A-Za-z_][A-Za-z0-9_]*"
     },
     "string": {

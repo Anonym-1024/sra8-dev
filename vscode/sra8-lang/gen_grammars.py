@@ -50,7 +50,8 @@ def asm_grammar() -> dict:
                  "captures": {"1": {"name": "keyword.control.directive.include.sra8asm"},
                               "2": {"name": "string.unquoted.include.sra8asm"}}},
             ]},
-            "alias": {"name": "entity.name.function.preprocessor.sra8asm", "match": r"![A-Za-z_][A-Za-z0-9_]*"},
+            # a use of a !DEFINE alias is coloured like !DEFINE itself
+            "alias": {"name": "keyword.control.directive.define.sra8asm", "match": r"![A-Za-z_][A-Za-z0-9_]*"},
             "string": {"patterns": [
                 {"name": "string.quoted.double.sra8asm", "begin": "\"", "end": "\"",
                  "patterns": [{"name": "constant.character.escape.sra8asm", "match": ESCAPES},

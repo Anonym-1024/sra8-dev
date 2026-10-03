@@ -79,7 +79,7 @@ static const char GRAMMAR_TEMPLATE[] =
     "      ]\n"
     "    },\n"
     "    \"alias\": {\n"
-    "      \"name\": \"entity.name.function.preprocessor.sra8asm\",\n"
+    "      \"name\": \"keyword.control.directive.define.sra8asm\",\n"
     "      \"match\": \"![A-Za-z_][A-Za-z0-9_]*\"\n"
     "    },\n"
     "    \"string\": {\n"

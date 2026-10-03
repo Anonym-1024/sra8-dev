@@ -40,6 +40,8 @@
         mova  r2a, =msg_banner
         brl   r12a, =puts
 
+
+
 prompt:
         mova  r2a, =msg_prompt
         brl   r12a, =puts
