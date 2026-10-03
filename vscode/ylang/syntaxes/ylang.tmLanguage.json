@@ -284,8 +284,8 @@
     "keyword": {
       "patterns": [
         {
-          "name": "keyword.operator.logical.ylang",
-          "match": "\\b(?:and|not|eq|ge|gt|le|lt|ne|or)\\b"
+          "name": "keyword.operator.word.ylang",
+          "match": "\\b(?:and|not|rol|ror|sar|shl|shr|eq|ge|gt|le|lt|ne|or)\\b"
         },
         {
           "name": "keyword.control.ylang",
@@ -302,10 +302,6 @@
         {
           "name": "keyword.other.ylang",
           "match": "\\b(?:returns)\\b"
-        },
-        {
-          "name": "keyword.operator.word.ylang",
-          "match": "\\b(?:rol|ror|sar|shl|shr)\\b"
         }
       ]
     },

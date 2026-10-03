@@ -183,7 +183,7 @@ class VsCode(unittest.TestCase):
             pkg = json.load(f)
         self.assertEqual(pkg["contributes"]["languages"][0]["extensions"], [".y", ".yh"])
         rules = pkg["contributes"]["configurationDefaults"]["editor.tokenColorCustomizations"]["textMateRules"]
-        self.assertIn({"scope": gen_grammar.LOGIC_SCOPE, "settings": {"fontStyle": "bold"}}, rules)
+        self.assertIn({"scope": gen_grammar.WORD_OPERATOR_SCOPE, "settings": {"fontStyle": "bold"}}, rules)
         for rule in gen_grammar.grammar()["repository"].values():
             for q in rule.get("patterns", [rule]):
                 re.compile(q.get("match") or q["begin"])

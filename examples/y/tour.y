@@ -106,8 +106,9 @@ impl arithmetic: fn(a: int8, b: uint16, w: word) returns uint16 {
 
 impl pointers: fn(p: *[4]int8, many: [*]int8, f: *fn(c: char)) {
     var first: int8 = [p][0];
-    var second: *int8 = p + 1;
-    var third: int8 = [many + 2];
+    var second: *int8 = @ptr([p][1]);
+    var third: int8 = many[2];
+    many = @ptr(many[1]);                 // step to the next element
     var any: *opaque = p;
     var back: *int8 = @as(*int8)any;
     var where: addr = back;

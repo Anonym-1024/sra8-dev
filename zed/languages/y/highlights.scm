@@ -6,9 +6,9 @@
 ["struct" "union" "fn"] @keyword
 ["if" "else" "loop" "return" "break" "continue"] @keyword
 
-; the logic operators in bold: every Zed theme draws emphasis.strong bold
-["eq" "ne" "lt" "le" "gt" "ge" "not" "and" "or"] @emphasis.strong
-["shl" "shr" "sar" "rol" "ror"] @keyword.operator
+; the word operators in bold and in one colour: every Zed theme draws
+; emphasis.strong bold
+["eq" "ne" "lt" "le" "gt" "ge" "not" "and" "or" "shl" "shr" "sar" "rol" "ror"] @emphasis.strong
 
 (primitive_type) @type.builtin
 (type_identifier) @type

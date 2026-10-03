@@ -213,11 +213,19 @@ Every pointer is an address: 2 bytes, little-endian.
 | Type | Name | Points to |
 |---|---|---|
 | `*T` | pointer | one `T` |
-| `[*]T` | pointer to many | the first of an unknown number of `T` |
+| `[*]T` | pointer to many | the first of an unknown number of `T`; the only pointer that can be indexed (11.7) |
 | `*[n]T` | pointer to array | an array of exactly `n` `T` (this is `*T` with `T = [n]T`) |
 | `*opaque` | pointer to anything | memory of an unknown type |
 
 `nullptr` is the pointer with address 0.
+
+Pointers have no `+` or `-`. **Pointer arithmetic is indexing a pointer
+to many:** `p[i]` is the `i`-th `T` after `p`: the offset `i` is
+multiplied by the size of `T`, so the address is `p + i × @sizeof(T)`
+(with `p: [*]int16`, `p[3]` is 6 bytes after `p`), and
+`@ptr(p[i])` is that address as a `[*]T`, so `p = @ptr(p[1]);` steps to
+the next element. A `*[n]T` converts to `[*]T` implicitly (8.2); a `*T`
+does not, because it promises a single `T` (`@as([*]T)p` if needed).
 
 ### 5.4 Arrays
 
@@ -305,7 +313,7 @@ types are complete except:
 A value of an incomplete type cannot be created, stored, assigned, passed
 or returned, and `@sizeof` of it is an error. A pointer to an incomplete
 type is complete, but it cannot be dereferenced while its target is
-incomplete. (Pointer arithmetic counts bytes, so it works on any pointer.)
+incomplete.
 
 ---
 
@@ -473,8 +481,8 @@ type is required:
 
 - **storing:** initialisation, assignment, an argument, a `return` value,
   an element or field in an initialiser;
-- **inside operators:** when the operands of `+` / `-` (pointer
-  arithmetic), of a comparison, or of a dereference `[ ]` need it (8.3).
+- **inside operators:** when the operands of a comparison or of a
+  dereference `[ ]` need it (8.3).
 
 Since `addr` is `uint16` (5.1), a pointer converts to `uint16` as well, but
 to no other integer type.
@@ -493,10 +501,9 @@ constants have taken their type (8.1) and after pointer conversions:
   (`*[4]int8` and `*[8]int8`, or `*int8` and `*int16`), it is an error.
 - **Comparison of a pointer with an `addr`:** the pointer is converted to
   `addr`.
-- **Pointer arithmetic** `p + n`, `p - n`, with the pointer on the **left**:
-  `p` is converted to `*T` (`*[n]T` to `*T`, `[*]T` to `*T`); `n` is any
-  integer type up to 16 bits, not a pointer; the offset is counted in
-  **bytes**; the result has the type `*T`.
+- **No pointer arithmetic with operators:** a pointer is never the left
+  operand of an arithmetic or bit operator (`p + 1` is an error). A pointer
+  moves by indexing a `[*]T` (11.7).
 - **A pointer on the right** of an arithmetic or bit operator whose left
   operand is an `addr` is converted to `addr`, and the result is an `addr`:
   with `a: addr = p;` the distance `a - q` is a number of bytes.
@@ -739,12 +746,12 @@ decide the result.
 
 | Expression | Requires | Result |
 |---|---|---|
-| `@ptr(x)` | `x` is an lvalue or a function name | `*T`, `T` the type of `x` (`*[n]T` for an array, `*fn(…)` for a function) |
+| `@ptr(x)` | `x` is an lvalue or a function name | `*T`, `T` the type of `x` (`*[n]T` for an array, `*fn(…)` for a function); for an element `x[i]` a `[*]T`, see below |
 | `[p]` | `p: *T` with complete `T` (`[*]T` converts, 8.3) | the lvalue `T` that `p` points to |
 | `[p][i]` | `p: *[n]T` | element `i` of the array |
 | `[p].f` | `p` points to a struct or union | field `f` |
-| `x[i]` | `x: [*]T` | element `i`: the `T` at byte address `x + i × @sizeof(T)` |
-| `p + n`, `p - n` | `p: *T` (8.3), `n` an integer up to 16 bits | `*T`, `n` **bytes** further |
+| `x[i]` | `x: [*]T`, `i` an integer up to 16 bits (may be negative) | element `i`: the offset is multiplied by the size of `T`, so the `T` is at address `x + i × @sizeof(T)` |
+| `@ptr(x[i])` | `x: [*]T`, or an array lvalue | the address of element `i` as a `[*]T` (which converts to `*T` where one is required): this is pointer arithmetic |
 | `f(args)` | `f: *fn(…)` | a call through the pointer, written like a direct call; `[f]` is an error, because a function type is incomplete (5.9) |
 
 Fields are reached through a pointer only by dereferencing first: `p.f` with

@@ -16,7 +16,7 @@
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {
-            "scope": "keyword.operator.logical.ylang",
+            "scope": "keyword.operator.word.ylang",
             "settings": {
               "fontStyle": "bold"
             }

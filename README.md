@@ -147,8 +147,9 @@ bar, or map the extension in the settings:
 ## Zed
 
 The extension in `zed/` gives Zed syntax highlighting for SRA-8 assembly
-(`.s`, `.inc`), linker scripts (`.ld`) and Y (`.y`, `.yh`). The Y logic
-operators (`and`, `or`, `not`, `eq` …) are bold in every theme.
+(`.s`, `.inc`), linker scripts (`.ld`) and Y (`.y`, `.yh`). The Y word
+operators (`and`, `or`, `not`, `eq` …, `shl`, `ror` …) are bold, in one
+colour, in every theme.
 
 Zed highlights with Tree-sitter parsers, which it compiles itself from a
 committed revision of this repository. To install:

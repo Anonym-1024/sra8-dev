@@ -21,8 +21,8 @@ COMPOUND = ["struct", "union", "fn"]                         # struct{...} union
 OTHER = ["returns"]
 TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr", "opaque"]
 CONSTANTS = ["true", "false", "nullptr", "undefined", "_"]
-LOGIC = ["eq", "ne", "lt", "le", "gt", "ge", "not", "and", "or"]   # shown in bold
-SHIFTS = ["shl", "shr", "sar", "rol", "ror"]
+LOGIC = ["eq", "ne", "lt", "le", "gt", "ge", "not", "and", "or"]   # the word operators,
+SHIFTS = ["shl", "shr", "sar", "rol", "ror"]                       # all bold in one colour
 BUILTINS = ["ptr", "sizeof", "bool", "as", "cast"]                  # @ptr(x) ...
 ATTRIBUTES = ["main", "section", "reg"]                             # @main ...
 PREPROCESSOR = ["INCLUDE", "DEFINE", "IFDEF", "IFNDEF", "ELSE", "ENDIF"]
@@ -30,7 +30,7 @@ WORD_LISTS = {"control": CONTROL, "declarations": DECLARATIONS, "compound": COMP
               "other": OTHER, "types": TYPES, "constants": CONSTANTS, "logic": LOGIC,
               "shifts": SHIFTS, "builtins": BUILTINS, "attributes": ATTRIBUTES}
 
-LOGIC_SCOPE = "keyword.operator.logical.ylang"
+WORD_OPERATOR_SCOPE = "keyword.operator.word.ylang"
 
 # ---------------------------------------------------------------------------
 
@@ -133,13 +133,12 @@ def grammar() -> dict:
             "prefixed-type": {"match": r"(" + PREFIXES + r"+)" + tail,
                               "captures": {"1": prefix_op, **type_scopes(2)}},
             "keyword": {"patterns": [
-                # the logic words: here, before "call", so that "and (" is not a call
-                {"name": LOGIC_SCOPE, "match": words(LOGIC)},
+                # the word operators: here, before "call", so that "and (" is not a call
+                {"name": WORD_OPERATOR_SCOPE, "match": words(LOGIC + SHIFTS)},
                 {"name": "keyword.control.ylang", "match": words(CONTROL)},
                 {"name": "storage.type.declaration.ylang", "match": words(DECLARATIONS)},
                 {"name": "storage.type.compound.ylang", "match": words(COMPOUND)},
                 {"name": "keyword.other.ylang", "match": words(OTHER)},
-                {"name": "keyword.operator.word.ylang", "match": words(SHIFTS)},
             ]},
             "type": {"name": "storage.type.primitive.ylang", "match": words(TYPES)},
             "constant": {"name": "constant.language.ylang", "match": words(CONSTANTS)},
@@ -192,10 +191,10 @@ PACKAGE = {
     "engines": {"vscode": "^1.60.0"},
     "categories": ["Programming Languages"],
     "contributes": {
-        # the logic operators in bold, whatever the colour theme
+        # the word operators in bold, whatever the colour theme
         "configurationDefaults": {
             "editor.tokenColorCustomizations": {
-                "textMateRules": [{"scope": LOGIC_SCOPE, "settings": {"fontStyle": "bold"}}],
+                "textMateRules": [{"scope": WORD_OPERATOR_SCOPE, "settings": {"fontStyle": "bold"}}],
             },
         },
         "languages": [
