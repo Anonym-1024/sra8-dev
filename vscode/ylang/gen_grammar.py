@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Generate the VS Code grammar and configuration of the Y language extension.
 
-Follows the draft syntax of examples/asm/echo.y.  Y is still being
-designed, so the word lists below are the place to edit; run ``make vscode``
-afterwards.
+Follows the language definition in docs/y.md.  The word lists below are
+the place to edit when the language changes; run ``make vscode`` afterwards.
 """
 
 from __future__ import annotations
@@ -16,17 +15,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---- word lists: edit these as the language changes --------------------------
 
-CONTROL = ["if", "else", "while", "do", "for", "break", "continue", "return",
-           "goto", "switch", "case", "default"]
+CONTROL = ["if", "else", "loop", "break", "continue", "return"]
 DECLARATIONS = ["decl", "impl", "var", "type", "internal"]   # decl/impl/var NAME: ...  type NAME = ...
 COMPOUND = ["struct", "union", "fn"]                         # struct{...} union{...} fn(...) returns T
-OTHER = ["returns", "asm"]
-TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr"]
-CONSTANTS = ["true", "false", "null"]
-LOGIC = ["eq", "neq", "gt", "sm", "gte", "sme", "not", "and", "or"]   # shown in bold
+OTHER = ["returns"]
+TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr", "opaque"]
+CONSTANTS = ["true", "false", "nullptr", "undefined", "_"]
+LOGIC = ["eq", "ne", "lt", "le", "gt", "ge", "not", "and", "or"]   # shown in bold
+SHIFTS = ["shl", "shr", "sar", "rol", "ror"]
+BUILTINS = ["ptr", "sizeof", "bool", "as", "cast"]                  # @ptr(x) ...
+ATTRIBUTES = ["main", "section", "reg"]                             # @main ...
 PREPROCESSOR = ["INCLUDE", "DEFINE", "IFDEF", "IFNDEF", "ELSE", "ENDIF"]
 WORD_LISTS = {"control": CONTROL, "declarations": DECLARATIONS, "compound": COMPOUND,
-              "other": OTHER, "types": TYPES, "constants": CONSTANTS, "logic": LOGIC}
+              "other": OTHER, "types": TYPES, "constants": CONSTANTS, "logic": LOGIC,
+              "shifts": SHIFTS, "builtins": BUILTINS, "attributes": ATTRIBUTES}
 
 LOGIC_SCOPE = "keyword.operator.logical.ylang"
 
@@ -35,7 +37,7 @@ LOGIC_SCOPE = "keyword.operator.logical.ylang"
 IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
 SCHEMA = "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json"
 ESCAPES = r"\\[ntr0\\'\"]"
-# type prefixes: *T  [*]T  [n]T  []T, any number of them
+# type prefixes: *T  [*]T  [n]T  [_]T, any number of them
 PREFIXES = r"(?:\*|\[\*\]|\[[^\[\]]*\])"
 
 
@@ -61,7 +63,7 @@ def grammar() -> dict:
         "scopeName": "source.ylang",
         "patterns": [{"include": "#" + p} for p in (
             "comment", "preprocessor", "string", "character", "number",
-            "declaration", "case", "parameter", "type-after-colon", "returns", "prefixed-type",
+            "declaration", "loop-name", "parameter", "type-after-colon", "returns", "prefixed-type",
             "keyword", "type", "constant", "builtin", "call", "operator", "punctuation")],
         "repository": {
             "comment": {"patterns": [
@@ -69,12 +71,15 @@ def grammar() -> dict:
                 {"name": "comment.block.ylang", "begin": r"/\*", "end": r"\*/"},
             ]},
             # the text preprocessor: !INCLUDE file, !DEFINE name text, !IFDEF/!IFNDEF name,
-            # !ELSE, !ENDIF, and !name for a defined alias
+            # !ELSE [IFDEF/IFNDEF name], !ENDIF, and !name for a defined alias
             "preprocessor": {"patterns": [
                 {"match": r"^\s*(!INCLUDE)\s+(.*?)\s*(?=//|$)",
                  "captures": {"1": {"name": "keyword.control.directive.include.ylang"},
                               "2": {"name": "string.unquoted.include.ylang"}}},
                 {"match": r"^\s*(!(?:DEFINE|IFDEF|IFNDEF))\s+(" + IDENT + ")",
+                 "captures": {"1": {"name": "keyword.control.directive.define.ylang"},
+                              "2": {"name": "entity.name.function.preprocessor.ylang"}}},
+                {"match": r"^\s*(!ELSE\s+(?:IFDEF|IFNDEF))\s+(" + IDENT + ")",
                  "captures": {"1": {"name": "keyword.control.directive.define.ylang"},
                               "2": {"name": "entity.name.function.preprocessor.ylang"}}},
                 {"name": "keyword.control.directive.define.ylang", "match": r"!(?:ELSE|ENDIF)\b"},
@@ -90,8 +95,8 @@ def grammar() -> dict:
             },
             "character": {"name": "constant.character.ylang", "match": r"'(?:" + ESCAPES + r"|[^'\\])'"},
             "number": {"name": "constant.numeric.ylang",
-                       "match": r"\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|[0-9]+)[uUlL]*\b"},
-            # decl/impl NAME: fn ...   decl NAME: type   decl/var NAME: T   type NAME =   fn NAME(
+                       "match": r"\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\b"},
+            # decl/impl NAME: fn ...   decl NAME: type   decl/var NAME: T   type NAME =
             "declaration": {"patterns": [
                 {"match": r"\b(decl|impl)\s+(" + IDENT + r")\s*(:)(?=\s*fn\b)",
                  "captures": {"1": {"name": "storage.type.declaration.ylang"},
@@ -109,22 +114,11 @@ def grammar() -> dict:
                  "captures": {"1": {"name": "storage.type.declaration.ylang"},
                               "2": {"name": "entity.name.type.ylang"},
                               "3": {"name": "keyword.operator.assignment.ylang"}}},
-                {"match": r"\b(fn)\s+(" + IDENT + ")",
-                 "captures": {"1": {"name": "storage.type.compound.ylang"},
-                              "2": {"name": "entity.name.function.ylang"}}},
             ]},
-            # case X:  default:  -- they swallow the space after ':' so that it
-            # does not start a type (see type-after-colon)
-            "case": {"patterns": [
-                {"match": r"\b(case)\b([^:]*)(:)\s*",
-                 "captures": {"1": {"name": "keyword.control.ylang"},
-                              "2": {"patterns": [{"include": "#number"}, {"include": "#character"},
-                                                 {"include": "#constant"}, {"include": "#preprocessor"}]},
-                              "3": {"name": "punctuation.separator.case.ylang"}}},
-                {"match": r"\b(default)\s*(:)\s*",
-                 "captures": {"1": {"name": "keyword.control.ylang"},
-                              "2": {"name": "punctuation.separator.case.ylang"}}},
-            ]},
+            # loop NAME {   break NAME;   continue NAME;
+            "loop-name": {"match": r"\b(loop|break|continue)\s+(?!(?:" + "|".join(LOGIC) + r")\b)(" + IDENT + r")\b",
+                          "captures": {"1": {"name": "keyword.control.ylang"},
+                                       "2": {"name": "entity.name.label.ylang"}}},
             # name: T  -- parameters of fn(...) and members of struct{...} / union{...}
             "parameter": {"match": r"\b(" + IDENT + r")\s*(:)(?=\s*(?:" + PREFIXES + r"|[A-Za-z_]))",
                           "captures": {"1": {"name": "variable.parameter.ylang"},
@@ -135,7 +129,7 @@ def grammar() -> dict:
             "returns": {"match": r"\b(returns)\b\s*(" + PREFIXES + r"*)\s*" + tail + "?",
                         "captures": {"1": {"name": "keyword.other.returns.ylang"}, "2": prefix_op,
                                      **type_scopes(3)}},
-            # *T [*]T [n]T []T anywhere else, e.g. in fn(*user, [*]char) or @as([4]int8, x)
+            # *T [*]T [n]T anywhere else, e.g. in fn(*user, [*]char) or @as(*[4]int8)p
             "prefixed-type": {"match": r"(" + PREFIXES + r"+)" + tail,
                               "captures": {"1": prefix_op, **type_scopes(2)}},
             "keyword": {"patterns": [
@@ -145,17 +139,22 @@ def grammar() -> dict:
                 {"name": "storage.type.declaration.ylang", "match": words(DECLARATIONS)},
                 {"name": "storage.type.compound.ylang", "match": words(COMPOUND)},
                 {"name": "keyword.other.ylang", "match": words(OTHER)},
+                {"name": "keyword.operator.word.ylang", "match": words(SHIFTS)},
             ]},
             "type": {"name": "storage.type.primitive.ylang", "match": words(TYPES)},
             "constant": {"name": "constant.language.ylang", "match": words(CONSTANTS)},
-            "builtin": {"name": "support.function.builtin.ylang", "match": "@" + IDENT},
+            "builtin": {"patterns": [
+                {"name": "support.function.builtin.ylang", "match": "@(?:" + "|".join(BUILTINS) + r")\b"},
+                {"name": "storage.modifier.attribute.ylang", "match": "@(?:" + "|".join(ATTRIBUTES) + r")\b"},
+                {"name": "invalid.illegal.builtin.ylang", "match": "@" + IDENT},
+            ]},
             "call": {"match": r"\b(" + IDENT + r")\s*(?=\()",
                      "captures": {"1": {"name": "entity.name.function.call.ylang"}}},
-            # the operators of the draft: = + - & | ~ << >>  (the logic words are keywords)
+            # + - * / % & | ^ ~ and their compound assignments  (the logic and shift words are keywords)
             "operator": {"patterns": [
-                {"name": "keyword.operator.ylang", "match": r"<<|>>|[-+&|~]"},
+                {"name": "keyword.operator.assignment.compound.ylang", "match": r"[-+*/%&|^]="},
+                {"name": "keyword.operator.ylang", "match": r"[-+*/%&|^~]"},
                 {"name": "keyword.operator.assignment.ylang", "match": "="},
-                {"name": "keyword.operator.type.ylang", "match": r"\*"},
             ]},
             "punctuation": {"patterns": [
                 {"name": "punctuation.terminator.statement.ylang", "match": ";"},
@@ -180,7 +179,7 @@ LANGUAGE = {
         "increaseIndentPattern": r"^.*\{[^}\"']*$",
         "decreaseIndentPattern": r"^\s*\}",
     },
-    "wordPattern": r"[@!]?[A-Za-z_][A-Za-z0-9_]*|(?:0[xXbB])?[0-9A-Fa-f]+[uUlL]*",
+    "wordPattern": r"[@!]?[A-Za-z_][A-Za-z0-9_]*|(?:0[xXbBoOdD])?[0-9A-Fa-f]+",
 }
 
 PACKAGE = {

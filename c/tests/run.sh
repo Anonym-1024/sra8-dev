@@ -4,7 +4,7 @@
 #   make test      or      sh tests/run.sh       (in the c folder)
 #
 # Needs the tools in c/bin/ (make) and a POSIX shell with cmp, od, grep and
-# sed.  Examples, runtime, linker scripts, goldens, docs and the VS Code
+# sed.  Examples, linker scripts, goldens, docs and the VS Code
 # grammar are shared with the Python implementation one folder up.  The
 # RTL check is skipped when ../sra-8-fpga/sra-8-fpga (next to the
 # repository) is missing; set SRA8_RTL to point elsewhere.
@@ -512,24 +512,29 @@ obj bssend
 if "$AS" "$T/bssend.dis.s" -o "$T/bssend2.o" 2> "$T/bssend.err"; then ok; else bad "bss label at the end" "$(cat "$T/bssend.err")"; fi
 
 # ===========================================================================
-section "runtime and start-up code"
+section "boot.ld"
 
-objs=""
-for f in crt0 isr_default uart rt_mul rt_div rt_shift rt_mem; do
-    if "$AS" -Werror "$ROOT/lib/$f.s" -o "$T/rt_$f.o" 2> "$T/rt_$f.err"; then ok; else bad "lib/$f.s" "$(cat "$T/rt_$f.err")"; fi
-done
-"$AS" "$ROOT/examples/rt/hello.s" -o "$T/hello.o"
-if "$LD" -T "$BOOT" -o "$T/hello.bin" -M "$T/hello.map" "$T/rt_crt0.o" "$T/hello.o" "$T/rt_isr_default.o" "$T/rt_uart.o" \
-    "$T/rt_rt_mul.o" "$T/rt_rt_div.o" "$T/rt_rt_shift.o" "$T/rt_rt_mem.o" 2> "$T/hello.err"; then
+src boot <<'EOF2'
+        .code vector
+        .export _start
+_start: intpcw =handler
+        .code
+spin:   br =spin
+handler:
+        intrw #0
+        .bss
+buf:    .res 16
+EOF2
+obj boot
+if "$LD" -T "$BOOT" -o "$T/boot.bin" -M "$T/boot.map" "$T/boot.o" 2> "$T/boot.ld.err"; then
     ok
-    [ "$(hexof "$T/hello.bin" | cut -c1-4)" = 00d0 ] && ok || bad "intpcw is not at address 0"
-    for s in "0x0000  _start" "0xFFFF  __stack_top" "__mul32" "__divs16" "__sar32" "__copy" "uart_puts" "__isr" "main"; do
-        if grep -qF "$s" "$T/hello.map"; then ok; else bad "hello.map lacks $s"; fi
+    [ "$(hexof "$T/boot.bin" | cut -c1-4)" = 00d0 ] && ok || bad "intpcw is not at address 0"
+    for s in "0x0000  _start" "0xFFFF  __stack_top" "0x1000  __bss_start" "0x1010  __bss_end"; do
+        if grep -qF "$s" "$T/boot.map"; then ok; else bad "boot.map lacks $s" "$(cat "$T/boot.map")"; fi
     done
 else
-    bad "hello does not link" "$(cat "$T/hello.err")"
+    bad "boot.ld does not link" "$(cat "$T/boot.ld.err")"
 fi
-ld_fails nomain "$BOOT" "undefined symbol 'main'" "$T/rt_crt0.o" "$T/rt_isr_default.o"
 
 # ===========================================================================
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

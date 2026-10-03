@@ -16,7 +16,7 @@ make test
 ```
 
 The programs go to `c/bin/`. The tests (`tests/run.sh`, POSIX shell) use
-the shared examples, runtime, linker scripts and goldens of the parent
+the shared examples, linker scripts and goldens of the parent
 folder, and check that `docs/isa.md` and the VS Code grammar, which the
 Python tools generate, agree with the C instruction table.
 

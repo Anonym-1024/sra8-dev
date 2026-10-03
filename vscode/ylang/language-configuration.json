@@ -83,5 +83,5 @@
     "increaseIndentPattern": "^.*\\{[^}\\\"']*$",
     "decreaseIndentPattern": "^\\s*\\}"
   },
-  "wordPattern": "[@!]?[A-Za-z_][A-Za-z0-9_]*|(?:0[xXbB])?[0-9A-Fa-f]+[uUlL]*"
+  "wordPattern": "[@!]?[A-Za-z_][A-Za-z0-9_]*|(?:0[xXbBoOdD])?[0-9A-Fa-f]+"
 }

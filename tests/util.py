@@ -18,7 +18,6 @@ from sra8.obj import Object  # noqa: E402
 RTL = os.environ.get("SRA8_RTL", os.path.join(ROOT, "..", "sra-8-fpga", "sra-8-fpga"))
 GOLDEN = os.path.join(ROOT, "tests", "golden")
 EXAMPLES = os.path.join(ROOT, "examples")
-LIB = os.path.join(ROOT, "lib")
 LDSCRIPTS = os.path.join(ROOT, "ldscripts")
 
 FLAT = """

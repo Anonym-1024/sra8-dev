@@ -5,7 +5,7 @@
 #   make check-rtl      compare the instruction table with the RTL
 #   make SANITIZE=address,undefined clean test     run the tests under sanitizers
 #
-# Examples, runtime, linker scripts and goldens are shared with the Python
+# Examples, linker scripts and goldens are shared with the Python
 # implementation in the parent folder.
 
 CC       ?= cc

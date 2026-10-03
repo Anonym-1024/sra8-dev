@@ -6,7 +6,7 @@ sra8-ld [-T script.ld] [-o out] [--format bin|mem|ihex] [--mem-size N]
 ```
 
 All objects on the command line are linked, in that order. There are no
-libraries: runtime routines are ordinary objects on the command line.
+libraries: shared routines are ordinary objects on the command line.
 Without `-T` the script `ldscripts/boot.ld` of this repository is used,
 also when the linker is called through a link made by `make install`.
 
@@ -53,8 +53,8 @@ wins. Script symbols behave like exported labels: objects reach them with
 
 | Script | Use |
 |---|---|
-| `ldscripts/boot.ld` | a program in the 4 KiB boot ROM with `crt0`: vector at 0, code and data up to 0x0FFF, bss from 0x1000, `__stack_top` = 0xFFFF. Defines `__bss_start`, `__bss_end`, `__stack_top`. |
-| `ldscripts/flat.ld` | the legacy assembler's layout: everything from 0, code then data then bss. For programs without `crt0`. |
+| `ldscripts/boot.ld` | a program in the 4 KiB boot ROM: section `code vector` at 0, code and data up to 0x0FFF, bss from 0x1000, `__stack_top` = 0xFFFF. Defines `__bss_start`, `__bss_end`, `__stack_top`. |
+| `ldscripts/flat.ld` | the legacy assembler's layout: everything from 0, code then data then bss. Used by the sample programs. |
 
 ## Outputs
 

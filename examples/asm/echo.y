@@ -12,7 +12,7 @@
     basic numeric types.
     Defined operations
         = (assignment)
-        +, -, &, |, ~, <<, >>,
+        +, -, *, / ,&, |, ~, <<, >>,
         eq, neq, gt, sm, gte, sme, not, and, or operators for logic operations that map to conditional execution in assembly
         @bool(condition-expression) builtin macro that will convert logic expression to 0 or 1.
 
@@ -66,14 +66,17 @@
     All types are complete except:
         fn(...) returns ...
         []T
+        opaque
         type
         types declared with decl
    */
 
    /* Type conversions
     Automatic:
-        structs and unions with same types but different labels convert automatically
-        *[n]T to *[]T to [*]T to *T
+        *[n]T to [*]T to *T
+        addr = uint16
+        char = uint8 = byte
+        ...
     */
 
     
@@ -101,6 +104,32 @@
 
     */
 
+    /* Builtin macros
+        @bool(logic-expr) converts logic to number
+        @sizeof(T) return size of a complete type in bytes
+        @as(T)x reinterprets type without changing the actual value. 
+            var a: int8 = 9;
+            var b: int32 = @as(int32)a; // this will corrupt memory since a is treated as 4 bytes when it actually is only one
+
+            //can be used for ptr conversion or compatible types conversion (struct with same field etc)
+            // compiler does not check for correctness
+            decl a: *opaque;
+            var b: int8 = [@as(*int8)a]
+            var b: int8 = [a] // error since incomplete type 'opaque' cannot be dereferenced
+
+        @cast(T)x creates a copy of the value while properly converting
+            converting between integer types
+            compiler will strictly define which conversions are valid
+        
+        @vol var ... marks variable as volatile
+        @reg var ... tells the compiler to try to keep var in register if possible. Cannot take address of such variable
+        
+     */
+
+    /*
+        etc.
+        The compiler should be able to compute constant expressions, so 4*@sizeof(int16)+1 is evaluated at compile time.
+     */
 
 
 
@@ -123,7 +152,18 @@ decl a: [*]int8
 
 impl main: fn()
 {
+    
+    var a: int8 = 8;
+}
 
+
+var x: bool = 0;
+
+@section(isr)
+impl isr: fn()
+{
+    x = 1;
+    @reg var counter: int8 = 0;
 }
 
 
@@ -138,8 +178,8 @@ impl add: fn(a: int8, b: int8) returns int8 {
 }
 
 impl max: fn(a: int8, b: int8) returns int8 {
-    @bool()
-    if (a sm b) {
+    
+    if (a lt b) {
         return b;
     } else {
         return a;

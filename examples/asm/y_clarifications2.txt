@@ -1,0 +1,32 @@
+1. if operators are on the same level, operator on left has higher precedence
+
+2. make shift operators all words
+
+3. chose option B
+
+4. chose A
+
+5. use your proposal, add @cast(bool) that will make any nonzero value true
+    if bool is used in if, it gets translated to if(flag eq true)
+
+6. make it ne
+
+7. keep it relative and add -I dir
+    later change that in asm as well
+
+8. yes, it is an alias
+
+9.remove all mentions of ylang in the document
+    the abi that was generated before will not be used
+    the new specification shouldnt contain the abi for now, it will be specified later
+
+
+
+Specify further where pointer to array decays to pointer to many and to pointer
+
+@as should be valid for everything
+    the final implementation of this is not a part of this specification
+
+require explicit _ = calling functions and discarding their result
+
+

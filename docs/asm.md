@@ -33,7 +33,6 @@ pseudo-instructions; the usual idioms are:
 | no-op | `mov.nvr r0, r0` |
 | call / return | `brl r12a, =f` / `br r12a` |
 | stop | `.l spin: br .b =spin` |
-| push / pop | see [abi.md](abi.md) |
 | 16-bit add | `adds lo, lo, x` then `addc hi, hi, y` |
 | 16-bit subtract | `subs lo, lo, x` then `subc hi, hi, y` |
 

@@ -22,7 +22,7 @@
       "include": "#declaration"
     },
     {
-      "include": "#case"
+      "include": "#loop-name"
     },
     {
       "include": "#parameter"
@@ -97,6 +97,17 @@
           }
         },
         {
+          "match": "^\\s*(!ELSE\\s+(?:IFDEF|IFNDEF))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.ylang"
+            },
+            "2": {
+              "name": "entity.name.function.preprocessor.ylang"
+            }
+          }
+        },
+        {
           "name": "keyword.control.directive.define.ylang",
           "match": "!(?:ELSE|ENDIF)\\b"
         },
@@ -132,7 +143,7 @@
     },
     "number": {
       "name": "constant.numeric.ylang",
-      "match": "\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|[0-9]+)[uUlL]*\\b"
+      "match": "\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+)\\b"
     },
     "declaration": {
       "patterns": [
@@ -191,61 +202,19 @@
               "name": "keyword.operator.assignment.ylang"
             }
           }
-        },
-        {
-          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
-          "captures": {
-            "1": {
-              "name": "storage.type.compound.ylang"
-            },
-            "2": {
-              "name": "entity.name.function.ylang"
-            }
-          }
         }
       ]
     },
-    "case": {
-      "patterns": [
-        {
-          "match": "\\b(case)\\b([^:]*)(:)\\s*",
-          "captures": {
-            "1": {
-              "name": "keyword.control.ylang"
-            },
-            "2": {
-              "patterns": [
-                {
-                  "include": "#number"
-                },
-                {
-                  "include": "#character"
-                },
-                {
-                  "include": "#constant"
-                },
-                {
-                  "include": "#preprocessor"
-                }
-              ]
-            },
-            "3": {
-              "name": "punctuation.separator.case.ylang"
-            }
-          }
+    "loop-name": {
+      "match": "\\b(loop|break|continue)\\s+(?!(?:eq|ne|lt|le|gt|ge|not|and|or)\\b)([A-Za-z_][A-Za-z0-9_]*)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.ylang"
         },
-        {
-          "match": "\\b(default)\\s*(:)\\s*",
-          "captures": {
-            "1": {
-              "name": "keyword.control.ylang"
-            },
-            "2": {
-              "name": "punctuation.separator.case.ylang"
-            }
-          }
+        "2": {
+          "name": "entity.name.label.ylang"
         }
-      ]
+      }
     },
     "parameter": {
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(:)(?=\\s*(?:(?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])|[A-Za-z_]))",
@@ -259,7 +228,7 @@
       }
     },
     "type-after-colon": {
-      "match": "(?<=:)\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
+      "match": "(?<=:)\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(opaque|uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
       "captures": {
         "1": {
           "name": "keyword.operator.type.ylang"
@@ -276,7 +245,7 @@
       }
     },
     "returns": {
-      "match": "\\b(returns)\\b\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))?",
+      "match": "\\b(returns)\\b\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(opaque|uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))?",
       "captures": {
         "1": {
           "name": "keyword.other.returns.ylang"
@@ -296,7 +265,7 @@
       }
     },
     "prefixed-type": {
-      "match": "((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])+)(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
+      "match": "((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])+)(?:\\b(opaque|uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
       "captures": {
         "1": {
           "name": "keyword.operator.type.ylang"
@@ -316,11 +285,11 @@
       "patterns": [
         {
           "name": "keyword.operator.logical.ylang",
-          "match": "\\b(?:and|gte|neq|not|sme|eq|gt|or|sm)\\b"
+          "match": "\\b(?:and|not|eq|ge|gt|le|lt|ne|or)\\b"
         },
         {
           "name": "keyword.control.ylang",
-          "match": "\\b(?:continue|default|return|switch|break|while|case|else|goto|for|do|if)\\b"
+          "match": "\\b(?:continue|return|break|else|loop|if)\\b"
         },
         {
           "name": "storage.type.declaration.ylang",
@@ -332,21 +301,37 @@
         },
         {
           "name": "keyword.other.ylang",
-          "match": "\\b(?:returns|asm)\\b"
+          "match": "\\b(?:returns)\\b"
+        },
+        {
+          "name": "keyword.operator.word.ylang",
+          "match": "\\b(?:rol|ror|sar|shl|shr)\\b"
         }
       ]
     },
     "type": {
       "name": "storage.type.primitive.ylang",
-      "match": "\\b(?:uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b"
+      "match": "\\b(?:opaque|uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b"
     },
     "constant": {
       "name": "constant.language.ylang",
-      "match": "\\b(?:false|null|true)\\b"
+      "match": "\\b(?:undefined|nullptr|false|true|_)\\b"
     },
     "builtin": {
-      "name": "support.function.builtin.ylang",
-      "match": "@[A-Za-z_][A-Za-z0-9_]*"
+      "patterns": [
+        {
+          "name": "support.function.builtin.ylang",
+          "match": "@(?:ptr|sizeof|bool|as|cast)\\b"
+        },
+        {
+          "name": "storage.modifier.attribute.ylang",
+          "match": "@(?:main|section|reg)\\b"
+        },
+        {
+          "name": "invalid.illegal.builtin.ylang",
+          "match": "@[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
     },
     "call": {
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
@@ -359,16 +344,16 @@
     "operator": {
       "patterns": [
         {
+          "name": "keyword.operator.assignment.compound.ylang",
+          "match": "[-+*/%&|^]="
+        },
+        {
           "name": "keyword.operator.ylang",
-          "match": "<<|>>|[-+&|~]"
+          "match": "[-+*/%&|^~]"
         },
         {
           "name": "keyword.operator.assignment.ylang",
           "match": "="
-        },
-        {
-          "name": "keyword.operator.type.ylang",
-          "match": "\\*"
         }
       ]
     },

@@ -1,6 +1,9 @@
 ; Board demo: binary counter on the port, about one step per second at 12 MHz
 ; (65536 passes of a 3 instruction delay loop, ~55 clock cycles per instruction)
 
+
+!DEFINE dddd
+
 .code
 .l count:
         add   r1, r1, #1
@@ -13,4 +16,3 @@
         br.su .b =wait            ; su = carry clear
 
         br    .b =count
-

@@ -156,13 +156,15 @@ LD = grammar("sra8ld", {
     "comment": pat(r";.*"),
 }, extras=[pat(r"\s"), "$comment"], word="identifier")
 
-# ---- Y (examples/asm/echo.y) ------------------------------------------------------------
+# ---- Y (docs/y.md) ----------------------------------------------------------------------
 
-Y_TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr"]
-Y_COMPARE = ["eq", "neq", "gt", "sm", "gte", "sme"]
+Y_TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr", "opaque"]
+Y_COMPARE = ["eq", "ne", "lt", "le", "gt", "ge"]
+Y_BITWISE = ["&", "|", "^", "shl", "shr", "sar", "rol", "ror"]
+Y_ASSIGN = ["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="]
 
-P = {"assign": 1, "or": 2, "and": 3, "not": 4, "compare": 5, "bitor": 6, "bitand": 7,
-     "shift": 8, "add": 9, "unary": 10, "postfix": 11}
+# docs/y.md 11.2, lowest first
+P = {"logic": 1, "not": 2, "compare": 3, "add": 4, "mul": 5, "bit": 6, "prefix": 7, "postfix": 8}
 
 
 def binary(op, level):
@@ -172,10 +174,10 @@ def binary(op, level):
 
 Y = grammar("ylang", {
     "source_file": rep("$_top_level"),
-    "_top_level": choice("$declaration", "$implementation", "$type_definition",
-                         "$variable_declaration", "$_preproc"),
+    "_top_level": choice("$declaration", "$type_definition", "$implementation", "$variable_declaration",
+                         "$attribute", "$_preproc"),
 
-    # preprocessor
+    # preprocessor (docs/y.md 3)
     "_preproc": choice("$preproc_include", "$preproc_define", "$preproc_conditional", "$preproc_else",
                        "$preproc_endif"),
     "preproc_include": seq("!INCLUDE", field("path", "$path")),
@@ -183,101 +185,96 @@ Y = grammar("ylang", {
     "preproc_define": seq("!DEFINE", field("name", "$identifier"), opt(field("value", "$macro_value"))),
     "macro_value": immediate(pat(r"[ \t]+[^ \t\r\n][^\r\n]*")),   # the rest of the line
     "preproc_conditional": seq(choice("!IFDEF", "!IFNDEF"), field("name", "$identifier")),
-    "preproc_else": "!ELSE",
+    "preproc_else": seq("!ELSE", opt(seq(choice("IFDEF", "IFNDEF"), field("name", "$identifier")))),
     "preproc_endif": "!ENDIF",
     "alias": pat(r"![A-Za-z_][A-Za-z0-9_]*"),
 
-    # top level
-    "declaration": seq(opt("internal"), "decl", field("name", "$identifier"), ":", field("type", "$_type"),
-                       opt(";")),
+    # declarations (docs/y.md 7); attributes are items of their own, before what they apply to
+    "attribute": choice("@main", "@reg", seq("@section", "(", field("name", "$identifier"), ")")),
+    "declaration": seq("decl", field("name", "$identifier"), ":", field("type", choice("$_type", "type")), ";"),
+    "type_definition": seq("type", field("name", "$identifier"), "=", field("value", "$_type"), ";"),
     "implementation": seq(opt("internal"), "impl", field("name", "$identifier"), ":",
                           field("type", "$function_type"), field("body", "$block")),
-    "type_definition": seq(opt("internal"), "type", field("name", "$identifier"), "=",
-                           field("value", "$_type"), opt(";")),
     "variable_declaration": seq(opt("internal"), "var", field("name", "$identifier"), ":",
-                                field("type", "$_type"), opt(seq("=", field("value", "$_expression"))), ";"),
+                                field("type", "$_type"), "=", field("value", choice("$_value", "undefined")), ";"),
 
-    # types: prefix syntax
+    # types: prefixes, read left to right (docs/y.md 5.8)
     "_type": choice("$primitive_type", alias("$identifier", "type_identifier"), "$pointer_type",
-                    "$many_pointer_type", "$array_type", "$struct_type", "$union_type", "$function_type",
-                    "$type_type"),
+                    "$many_pointer_type", "$array_type", "$struct_type", "$union_type", "$function_type"),
     "primitive_type": choice(*Y_TYPES),
-    "type_type": "type",
     "pointer_type": seq("*", field("element", "$_type")),
     "many_pointer_type": seq("[", "*", "]", field("element", "$_type")),
-    "array_type": seq("[", opt(field("length", "$_expression")), "]", field("element", "$_type")),
+    "array_type": seq("[", field("length", choice("$_expression", "_")), "]", field("element", "$_type")),
     "struct_type": seq("struct", "$field_list"),
     "union_type": seq("union", "$field_list"),
-    "field_list": seq("{", rep(seq("$field_declaration", opt(choice(",", ";")))), "}"),
+    "field_list": seq("{", comma_sep1("$field_declaration"), opt(","), "}"),
     "field_declaration": seq(field("name", "$identifier"), ":", field("type", "$_type")),
     "function_type": prec_right(0, seq("fn", "$parameter_list",
                                        opt(seq("returns", field("return_type", "$_type"))))),
     "parameter_list": seq("(", comma_sep("$parameter"), ")"),
     "parameter": choice(seq(field("name", "$identifier"), ":", field("type", "$_type")), field("type", "$_type")),
 
-    # statements
+    # statements (docs/y.md 10)
     "block": seq("{", rep("$_statement"), "}"),
-    "_statement": choice("$variable_declaration", "$expression_statement", "$if_statement", "$while_statement",
-                         "$do_statement", "$for_statement", "$return_statement", "$break_statement",
-                         "$continue_statement", "$goto_statement", "$switch_statement", "$block",
-                         "$_preproc", ";"),
-    "expression_statement": seq("$_expression", ";"),
-    "if_statement": prec_right(0, seq("if", "(", field("condition", "$_expression"), ")",
-                                      field("consequence", "$_statement"),
-                                      opt(seq("else", field("alternative", "$_statement"))))),
-    "while_statement": seq("while", "(", field("condition", "$_expression"), ")", field("body", "$_statement")),
-    "do_statement": seq("do", field("body", "$_statement"), "while", "(", field("condition", "$_expression"),
-                        ")", ";"),
-    "for_statement": seq("for", "(", opt(field("initializer", choice("$_expression", "$for_variable"))), ";",
-                         opt(field("condition", "$_expression")), ";", opt(field("update", "$_expression")),
-                         ")", field("body", "$_statement")),
-    "for_variable": seq("var", field("name", "$identifier"), ":", field("type", "$_type"),
-                        opt(seq("=", field("value", "$_expression")))),
-    "return_statement": seq("return", opt("$_expression"), ";"),
-    "break_statement": seq("break", ";"),
-    "continue_statement": seq("continue", ";"),
-    "goto_statement": seq("goto", field("label", "$identifier"), ";"),
-    "switch_statement": seq("switch", "(", field("value", "$_expression"), ")", "{", rep("$case_clause"), "}"),
-    "case_clause": seq(choice(seq("case", field("value", "$_expression")), "default"), ":", rep("$_statement")),
+    "_statement": choice("$variable_declaration", "$attribute", "$assignment_statement", "$call_statement",
+                         "$discard_statement", "$if_statement", "$loop_statement", "$break_statement",
+                         "$continue_statement", "$return_statement", "$block", "$_preproc"),
+    "assignment_statement": seq(field("left", "$_expression"), field("operator", choice(*Y_ASSIGN)),
+                                field("right", "$_value"), ";"),
+    "call_statement": seq("$call_expression", ";"),
+    "discard_statement": seq("_", "=", field("value", "$_expression"), ";"),
+    "if_statement": seq("if", "(", field("condition", "$_expression"), ")", field("consequence", "$block"),
+                        opt(seq("else", field("alternative", choice("$if_statement", "$block"))))),
+    "loop_statement": seq("loop", opt(field("name", "$identifier")), field("body", "$block")),
+    "break_statement": seq("break", opt(field("label", "$identifier")), ";"),
+    "continue_statement": seq("continue", opt(field("label", "$identifier")), ";"),
+    "return_statement": seq("return", opt("$_value"), ";"),
 
-    # expressions: = + - & | ~ << >>, and the logic words
-    "_expression": choice("$assignment_expression", "$binary_expression", "$unary_expression",
-                          "$call_expression", "$builtin_call", "$member_expression", "$index_expression",
-                          "$dereference_expression", "$parenthesized_expression", "$identifier", "$number",
-                          "$char", "$string", "$true", "$false", "$null", "$alias"),
-    "assignment_expression": prec_right(P["assign"], seq(field("left", "$_expression"), "=",
-                                                         field("right", "$_expression"))),
+    # initialisers (docs/y.md 9)
+    "_value": choice("$_expression", "$initializer"),
+    "initializer": seq("{", choice(
+        seq("$_value", rep(seq(",", "$_value")), opt(seq(",", "$fill"))),
+        comma_sep1("$field_initializer")), opt(","), "}"),
+    "fill": "_",
+    "field_initializer": seq(field("name", "$identifier"), "=", field("value", "$_value")),
+
+    # expressions (docs/y.md 11)
+    "_expression": choice("$binary_expression", "$unary_expression", "$cast_expression", "$call_expression",
+                          "$index_expression", "$member_expression", "$dereference_expression",
+                          "$builtin_expression", "$parenthesized_expression", "$identifier", "$number",
+                          "$char", "$string", "$static_string", "$true", "$false", "$nullptr", "$alias"),
     "binary_expression": choice(
-        binary("or", "or"), binary("and", "and"), binary(choice(*Y_COMPARE), "compare"),
-        binary("|", "bitor"), binary("&", "bitand"), binary(choice("<<", ">>"), "shift"),
-        binary(choice("+", "-"), "add")),
+        binary(choice("and", "or"), "logic"), binary(choice(*Y_COMPARE), "compare"),
+        binary(choice("+", "-"), "add"), binary(choice("*", "/", "%"), "mul"),
+        binary(choice(*Y_BITWISE), "bit")),
     "unary_expression": choice(
         prec(P["not"], seq(field("operator", "not"), field("operand", "$_expression"))),
-        prec(P["unary"], seq(field("operator", choice("-", "~", "&")), field("operand", "$_expression")))),
+        prec(P["prefix"], seq(field("operator", choice("-", "~")), field("operand", "$_expression")))),
+    "cast_expression": prec(P["prefix"], seq(field("operator", choice("@as", "@cast")), "(",
+                                             field("type", "$_type"), ")", field("operand", "$_expression"))),
     "call_expression": prec(P["postfix"], seq(field("function", "$_expression"), "$argument_list")),
-    "argument_list": seq("(", comma_sep("$_expression"), ")"),
-    "builtin_call": seq(field("name", "$builtin"), "(",
-                        comma_sep(choice("$_expression", "$primitive_type", "$pointer_type", "$many_pointer_type",
-                                         "$array_type", "$struct_type", "$union_type", "$function_type")), ")"),
-    "builtin": pat(r"@[A-Za-z_][A-Za-z0-9_]*"),
-    "member_expression": prec(P["postfix"], seq(field("object", "$_expression"), ".",
-                                                field("field", "$identifier"))),
+    "argument_list": seq("(", comma_sep("$_value"), ")"),
     "index_expression": prec(P["postfix"], seq(field("object", "$_expression"), "[",
                                                field("index", "$_expression"), "]")),
+    "member_expression": prec(P["postfix"], seq(field("object", "$_expression"), ".",
+                                                field("field", "$identifier"))),
     "dereference_expression": seq("[", field("pointer", "$_expression"), "]"),
+    "builtin_expression": choice(seq("@ptr", "(", field("operand", "$_expression"), ")"),
+                                 seq("@bool", "(", field("operand", "$_expression"), ")"),
+                                 seq("@sizeof", "(", field("type", "$_type"), ")")),
     "parenthesized_expression": seq("(", "$_expression", ")"),
 
-    # literals
-    "number": pat(r"(0[xX][0-9A-Fa-f]+|0[bB][01]+|[0-9]+)[uUlL]*"),
+    # literals (docs/y.md 4)
+    "number": pat(r"0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|0[dD][0-9]+|[0-9]+"),
     "char": pat(r"'([^'\\\n]|\\.)'"),
-    "string": pat(r's?"([^"\\\n]|\\.)*"'),
+    "string": pat(r'"([^"\\\n]|\\.)*"'),
+    "static_string": pat(r's"([^"\\\n]|\\.)*"'),
     "true": "true",
     "false": "false",
-    "null": "null",
+    "nullptr": "nullptr",
     "identifier": pat(r"[A-Za-z_][A-Za-z0-9_]*"),
     "comment": token(choice(pat(r"//[^\n]*"), pat(r"/\*[^*]*\*+([^/*][^*]*\*+)*/"))),
-}, extras=[pat(r"\s"), "$comment"], word="identifier",
-    conflicts=[("array_type", "dereference_expression")])
+}, extras=[pat(r"\s"), "$comment"], word="identifier")
 
 GRAMMARS = {"sra8asm": ASM, "sra8ld": LD, "ylang": Y}
 

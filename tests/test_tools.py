@@ -1,5 +1,5 @@
-"""Disassembler round trips, runtime, examples, command lines and the VS Code
-grammar (spec Section 10, items 6 and the runtime part of step 2)."""
+"""Disassembler round trips, the boot script, command lines and the editor
+grammars (spec Section 8, item 6)."""
 
 import json
 import os
@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from util import EXAMPLES, LDSCRIPTS, LIB, ROOT, asm_file, asm_text
+from util import EXAMPLES, LDSCRIPTS, ROOT, asm_file, asm_text
 
 from sra8 import isa
 from sra8.ld import layout, script
@@ -53,36 +53,28 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(relink(disassemble_image(0, img)), img)
 
 
-class Runtime(unittest.TestCase):
-    def objects(self, *extra):
-        paths = [os.path.join(LIB, "crt0.s")] + list(extra) + \
-                [os.path.join(LIB, f) for f in ("isr_default.s", "uart.s", "rt_mul.s", "rt_div.s",
-                                                 "rt_shift.s", "rt_mem.s")]
-        objs = []
-        for p in paths:
-            r = asm_file(p)
-            self.assertEqual(r.errors, [], p)
-            self.assertEqual(r.warnings, [], p)
-            objs.append(r.obj)
-        return paths, objs
+class BootScript(unittest.TestCase):
+    BOOT_PROGRAM = """
+        .code vector
+        .export _start
+_start: intpcw =handler
+        .code
+spin:   br =spin
+handler:
+        intrw #0
+        .bss
+buf:    .res 16
+"""
 
-    def test_runtime_links_with_boot_ld(self):
-        paths, objs = self.objects(os.path.join(EXAMPLES, "rt", "hello.s"))
-        res = layout.link(script.load(BOOT), paths, objs)
+    def test_boot_ld_layout(self):
+        r = asm_text(self.BOOT_PROGRAM)
+        self.assertEqual(r.errors, [])
+        res = layout.link(script.load(BOOT), ["boot.o"], [r.obj])
         syms = {s.name: s.addr for s in res.symbols}
         self.assertEqual(syms["_start"], 0)
         self.assertEqual(res.image[0:2], bytes([0x00, 0xD0]))        # intpcw at address 0
         self.assertEqual(syms["__stack_top"], 0xFFFF)
-        for name in ("__mul16", "__mul32", "__divu16", "__mods32", "__shl16", "__sar32", "__copy", "__zero",
-                     "uart_putc", "uart_getc", "uart_avail", "uart_puts", "__isr", "main"):
-            self.assertIn(name, syms)
-        self.assertLessEqual(len(res.image), 4096)
-
-    def test_main_is_required(self):
-        paths, objs = self.objects()
-        with self.assertRaises(layout.LinkError) as cm:
-            layout.link(script.load(BOOT), paths, objs)
-        self.assertIn("undefined symbol 'main'", " ".join(cm.exception.errors))
+        self.assertEqual((syms["__bss_start"], syms["__bss_end"]), (0x1000, 0x1010))
 
 
 class CommandLines(unittest.TestCase):
@@ -128,9 +120,9 @@ class Zed(unittest.TestCase):
     queries compile and the example files parse without errors."""
 
     ZED = os.path.join(ROOT, "zed")
-    LANGS = {"sra8asm": ("sra8-asm", [os.path.join(EXAMPLES, "asm", "terminal.s"), os.path.join(LIB, "rt_div.s")]),
+    LANGS = {"sra8asm": ("sra8-asm", [os.path.join(EXAMPLES, "asm", "terminal.s"), os.path.join(EXAMPLES, "asm", "echo.s")]),
              "sra8ld": ("sra8-ld", [os.path.join(LDSCRIPTS, "boot.ld"), os.path.join(LDSCRIPTS, "flat.ld")]),
-             "ylang": ("y", [])}
+             "ylang": ("y", [os.path.join(EXAMPLES, "y", "tour.y")])}
 
     def test_grammar_json_current(self):
         sys.path.insert(0, self.ZED)
@@ -153,7 +145,7 @@ class Zed(unittest.TestCase):
                                    capture_output=True, text=True)
                 self.assertNotIn("ERROR", p.stdout, sample)
             # the query must compile against the grammar; any file of the language will do
-            target = samples[0] if samples else os.path.join(EXAMPLES, "asm", "echo.y")
+            target = samples[0]
             p = subprocess.run(["tree-sitter", "query", "-p", grammar, queries, target],
                                capture_output=True, text=True)
             self.assertNotIn("Query error", p.stdout + p.stderr, name)

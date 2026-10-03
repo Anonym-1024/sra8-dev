@@ -1,0 +1,111 @@
+A
+1. Literals
+Numeric with radix support with 0b, 0d, 0o, 0x syntax
+Char literals 'a' with escaped characters support '\n'
+true and false are literals
+
+2. Strings and arrays
+var a: [_]char = "Hello."; ends up being [7]char. 
+strings are null terminated
+Static strings
+var b: *[_]char = s"Hello.";
+var c: [*]char = s"Hello."; both are valid, since *[_] can be auto converted to [*]
+
+arrays
+var d: [_]int8 = {1, 2, 3};
+
+3. Comments
+    cannot nest
+
+4. all identifiers are case sensitive
+    try to guess the reserved words list, i will clarify it later
+
+5. -, %, ^ and compound assignments are supported, ++ and -- is not.
+
+6. precedence for binary operators:
+  {&, |, <<, >>} > {*, /, %} > {+, -} > {gt, sm, eq ...} > {and, or}
+
+7. and and or do short circuit
+
+8. wrap
+    mixed widths have to be cast using @cast
+    int8 << int8 is invalid
+    int8 << uint8 is valid
+    try makeng distinct operators for logic, arithmetic and circular shift
+    chose the standard way of handling signed division.
+    keep in mind it has to work on sra-8
+
+9. string literals have type [_]char
+    numeric literals have type given by context.
+    compatible types, such as uint8, char, byte can are converted automatically
+
+10.
+there is only one loop syntax. loop can be optionally named
+
+continue name or break name are used. name is optional, then applies to innermost loop
+loop name {
+    ...
+}
+
+11. if requires (). else if exists
+
+12. not allowed
+
+13. return; is allowed
+return from all paths is not checked
+
+14. arrays initialiseu using {}
+    structs and unions initialised using var a: point = {x=3, y=9}
+
+15. uninitialised variables are not allowed
+
+16. no constants.
+17. no static variables, to persist they have to be declared outside the function
+
+18. no it is not legal
+
+19. yes, it is the same as with functions
+
+20. entry function will be marked with @main
+    signature is ungiven for now
+
+21. commas are used everywhere
+22. little endian, no padding
+23. yes, the ABI is outdated
+24. [p].x is only correct
+25. only [x][i] is allowed
+26. it is not allowed, no arrays are bound checked
+27. [f](x) is correct when calling pointers
+28. only complete types are accepted
+29. for now only integer conversions. large ints truncate, int to uint treats negative values as 0, uint to int assigns int max for higher values
+30. for now only works with function implementations. isr is just the section name.
+31. TODO
+32. define goes to end of line
+    IFDEF, ELSE, ELSE IFDEF, ELSE IFNDEF are valid as wall
+    include searches in current working dir
+33. names are kept the same for now
+    allow global 'var a: T = undefined'
+    undefined is a reserved word
+
+B
+
+1. taking address using @ptr(x)
+2. []T is completely removed
+3. see 2.
+4. it should count in bytes indeed
+    clean rules for implicit type conversion have to be set. come up with something
+
+5. it should be only explicit indeed
+6. keep the current behavior
+7. @as and @cast behave like operators with high precedence
+8. bool type will probable have different semantic for ~ operator.
+    keep it for now
+9. functions need forward declarations as well
+10. decl is a forward declaration. if it is not defined in the file, then it is imported
+11. namespacing might be added later
+12. no repeated decl
+13. opaque is used with ptr, meaning pointer to anything
+14. leave @vol out for now
+16. change them to the ones you proposed
+
+make it a new document and remove the old specification from SRA8_DEVKIT_SPEC.md

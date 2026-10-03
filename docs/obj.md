@@ -8,7 +8,7 @@ well. Version 2.
 {
   "format": "sra8-obj",
   "version": 2,
-  "source": "lib/crt0.s",
+  "source": "boot.s",
   "sections": [
     {"section": "code:vector", "size": 4, "data": "00D00000"},
     {"section": "code", "size": 52, "data": "003E0000…"},
@@ -18,7 +18,7 @@ well. Version 2.
     {"name": "_start", "section": "code:vector", "offset": 0}
   ],
   "relocations": [
-    {"section": "code:vector", "offset": 0, "type": "IMM16", "import": "__isr", "addend": 0},
+    {"section": "code:vector", "offset": 0, "type": "IMM16", "import": "irq_handler", "addend": 0},
     {"section": "code", "offset": 24, "type": "IMM16", "from": "code", "index": 44}
   ]
 }
