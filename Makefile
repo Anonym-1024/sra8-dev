@@ -4,16 +4,18 @@
 #   make test           run the test suite
 #   make install        make sra8-as, sra8-ld, sra8-objdump callable from anywhere
 #   make uninstall      remove them again
-#   make docs vscode    regenerate docs/isa.md and the VS Code assembly grammar
+#   make docs vscode    regenerate docs/isa.md and the VS Code grammars
 #   make examples       build the example programs into examples/build
 #   make golden         regenerate tests/golden with the legacy assembler of the RTL
 #   make c              build and test the C port
+#   make zed            regenerate the Zed parsers (needs the tree-sitter CLI)
+#   make zed-extension  write zed/extension.toml for installing the Zed extension
 
 PYTHON ?= python3
 PREFIX ?= $(HOME)/.local
 TOOLS  := sra8-as sra8-ld sra8-objdump
 
-.PHONY: all test install uninstall docs vscode examples golden c clean
+.PHONY: all test install uninstall docs vscode examples golden c zed zed-extension clean
 
 all: test
 
@@ -38,6 +40,7 @@ docs:
 
 vscode:
 	$(PYTHON) vscode/sra8-lang/gen_grammars.py
+	$(PYTHON) vscode/ylang/gen_grammar.py
 
 examples:
 	$(MAKE) -C examples
@@ -47,6 +50,15 @@ golden:
 
 c:
 	$(MAKE) -C c test
+
+ZED_GRAMMARS := sra8asm sra8ld ylang
+
+zed:
+	$(PYTHON) zed/gen_grammars.py
+	for g in $(ZED_GRAMMARS); do (cd zed/tree-sitter/$$g && tree-sitter generate --abi 14 src/grammar.json) || exit 1; done
+
+zed-extension:
+	$(PYTHON) zed/gen_grammars.py --manifest
 
 clean:
 	$(MAKE) -C examples clean

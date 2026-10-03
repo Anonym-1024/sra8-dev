@@ -4,6 +4,7 @@ grammar (spec Section 10, items 6 and the runtime part of step 2)."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -122,6 +123,43 @@ class CommandLines(unittest.TestCase):
             self.assertEqual(self.run_tool("sra8-as", src, "-Werror", "-o", os.path.join(d, "w.o")).returncode, 1)
 
 
+class Zed(unittest.TestCase):
+    """The Zed grammars match their generator; with the tree-sitter CLI, the
+    queries compile and the example files parse without errors."""
+
+    ZED = os.path.join(ROOT, "zed")
+    LANGS = {"sra8asm": ("sra8-asm", [os.path.join(EXAMPLES, "asm", "terminal.s"), os.path.join(LIB, "rt_div.s")]),
+             "sra8ld": ("sra8-ld", [os.path.join(LDSCRIPTS, "boot.ld"), os.path.join(LDSCRIPTS, "flat.ld")]),
+             "ylang": ("y", [])}
+
+    def test_grammar_json_current(self):
+        sys.path.insert(0, self.ZED)
+        import gen_grammars
+        for name, g in gen_grammars.GRAMMARS.items():
+            with open(os.path.join(self.ZED, "tree-sitter", name, "src", "grammar.json")) as f:
+                on_disk = json.load(f)
+            generated = json.loads(json.dumps(g))
+            generated["rules"] = {k: gen_grammars.r(v) for k, v in generated["rules"].items()}
+            self.assertEqual(on_disk["rules"], generated["rules"], "%s: run make zed" % name)
+            self.assertTrue(os.path.exists(os.path.join(self.ZED, "tree-sitter", name, "src", "parser.c")))
+
+    @unittest.skipUnless(shutil.which("tree-sitter"), "tree-sitter CLI not installed")
+    def test_queries_and_parsing(self):
+        for name, (lang, samples) in self.LANGS.items():
+            grammar = os.path.join(self.ZED, "tree-sitter", name)
+            queries = os.path.join(self.ZED, "languages", lang, "highlights.scm")
+            for sample in samples:
+                p = subprocess.run(["tree-sitter", "parse", "-p", grammar, "-q", sample],
+                                   capture_output=True, text=True)
+                self.assertNotIn("ERROR", p.stdout, sample)
+            # the query must compile against the grammar; any file of the language will do
+            target = samples[0] if samples else os.path.join(EXAMPLES, "asm", "echo.y")
+            p = subprocess.run(["tree-sitter", "query", "-p", grammar, queries, target],
+                               capture_output=True, text=True)
+            self.assertNotIn("Query error", p.stdout + p.stderr, name)
+            self.assertIn("capture:", p.stdout, name)
+
+
 class VsCode(unittest.TestCase):
     """The grammar must know every instruction and condition of isa.py."""
 
@@ -138,6 +176,25 @@ class VsCode(unittest.TestCase):
         self.assertTrue(set(isa.INSTRUCTIONS) <= listed, set(isa.INSTRUCTIONS) - listed)
         for cond in isa.CONDITIONS:
             self.assertIn(cond, m.group(1))
+
+    def test_ylang_extension(self):
+        """The Y grammar is current and knows every word of its generator's lists."""
+        sys.path.insert(0, os.path.join(ROOT, "vscode", "ylang"))
+        import gen_grammar
+        with open(os.path.join(ROOT, "vscode", "ylang", "syntaxes", "ylang.tmLanguage.json")) as f:
+            text = f.read()
+        self.assertEqual(json.loads(text), json.loads(json.dumps(gen_grammar.grammar())), "run make vscode")
+        for ws in gen_grammar.WORD_LISTS.values():
+            for w in ws:
+                self.assertIn(w, text)
+        with open(os.path.join(ROOT, "vscode", "ylang", "package.json")) as f:
+            pkg = json.load(f)
+        self.assertEqual(pkg["contributes"]["languages"][0]["extensions"], [".y", ".yh"])
+        rules = pkg["contributes"]["configurationDefaults"]["editor.tokenColorCustomizations"]["textMateRules"]
+        self.assertIn({"scope": gen_grammar.LOGIC_SCOPE, "settings": {"fontStyle": "bold"}}, rules)
+        for rule in gen_grammar.grammar()["repository"].values():
+            for q in rule.get("patterns", [rule]):
+                re.compile(q.get("match") or q["begin"])
 
     def test_package_json(self):
         with open(os.path.join(ROOT, "vscode", "sra8-lang", "package.json")) as f:

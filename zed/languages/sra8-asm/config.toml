@@ -1,0 +1,8 @@
+name = "SRA-8 Assembly"
+grammar = "sra8asm"
+path_suffixes = ["s", "inc"]
+line_comments = ["; "]
+brackets = [
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+    { start = "'", end = "'", close = true, newline = false, not_in = ["string", "comment"] },
+]

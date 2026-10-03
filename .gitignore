@@ -1,5 +1,7 @@
 build/
 examples/build/
 c/bin/
+zed/extension.toml
+zed/grammars/
 __pycache__/
 *.o

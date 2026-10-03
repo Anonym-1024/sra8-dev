@@ -1,0 +1,49 @@
+{
+  "name": "ylang",
+  "displayName": "Y Language",
+  "description": "Syntax highlighting for the Y language of the SRA-8 development kit (.y, .yh).",
+  "version": "0.1.0",
+  "publisher": "sra8-dev",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "keyword.operator.logical.ylang",
+            "settings": {
+              "fontStyle": "bold"
+            }
+          }
+        ]
+      }
+    },
+    "languages": [
+      {
+        "id": "ylang",
+        "aliases": [
+          "Y",
+          "ylang"
+        ],
+        "extensions": [
+          ".y",
+          ".yh"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ylang",
+        "scopeName": "source.ylang",
+        "path": "./syntaxes/ylang.tmLanguage.json"
+      }
+    ]
+  }
+}

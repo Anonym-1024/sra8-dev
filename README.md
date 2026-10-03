@@ -112,14 +112,65 @@ grammar after a change to the instruction set. `make golden` regenerates
 
 ## VS Code
 
-The extension in `vscode/sra8-lang` highlights SRA-8 assembly (`.s`,
-`.inc`) and linker scripts (`.ld`). Install it by linking the folder into
-the extensions directory once, then reload VS Code:
+Two extensions in `vscode/` provide syntax highlighting:
+
+| Extension | Files | Language id |
+|---|---|---|
+| `vscode/sra8-lang` | SRA-8 assembly (`.s`, `.inc`) and linker scripts (`.ld`) | `sra8-asm`, `sra8-ld` |
+| `vscode/ylang` | the Y language (`.y`, `.yh`), still a draft | `ylang` |
+
+Install each by linking its folder into the extensions directory once,
+then reload VS Code:
 
 ```bash
 ln -s "$PWD/vscode/sra8-lang" ~/.vscode/extensions/sra8-lang
 ```
 
-Other extensions may also claim `.s`. In that case pick "SRA-8 Assembly"
-with the language selector in the status bar, or add a
-`"files.associations"` entry to the workspace settings.
+```bash
+ln -s "$PWD/vscode/ylang" ~/.vscode/extensions/ylang
+```
+
+Other extensions may also claim `.s` (assemblers) or `.y` (yacc and
+bison). In that case pick the language with the selector in the status
+bar, or map the extension in the settings:
+
+```json
+"files.associations": {
+    "*.s": "sra8-asm",
+    "*.y": "ylang"
+}
+```
+
+`make vscode` regenerates both grammars: the assembly one from
+`sra8/isa.py`, the Y one from the word lists at the top of
+`vscode/ylang/gen_grammar.py`.
+
+## Zed
+
+The extension in `zed/` gives Zed syntax highlighting for SRA-8 assembly
+(`.s`, `.inc`), linker scripts (`.ld`) and Y (`.y`, `.yh`). The Y logic
+operators (`and`, `or`, `not`, `eq` …) are bold in every theme.
+
+Zed highlights with Tree-sitter parsers, which it compiles itself from a
+committed revision of this repository. To install:
+
+1. Commit the `zed/` folder.
+2. Write `zed/extension.toml`, which points Zed at that commit:
+
+   ```bash
+   make zed-extension
+   ```
+
+3. In Zed, open the command palette, run "zed: install dev extension" and
+   pick the `zed` folder.
+
+After changing a grammar, run `make zed` (it needs the Tree-sitter CLI:
+`cargo install tree-sitter-cli`), commit, run `make zed-extension` again,
+and rebuild the extension from Zed's extensions page. Changes to the
+`.scm` query files in `zed/languages/` only need the rebuild.
+
+| Path | Content |
+|---|---|
+| `zed/gen_grammars.py` | the three grammars, written as Tree-sitter `grammar.json` |
+| `zed/tree-sitter/*/src/` | the generated parsers, committed so Zed needs no generator |
+| `zed/languages/*/` | per language: `config.toml`, `highlights.scm` and brackets / indents |

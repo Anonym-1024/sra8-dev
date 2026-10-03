@@ -1,0 +1,4 @@
+name = "SRA-8 Linker Script"
+grammar = "sra8ld"
+path_suffixes = ["ld"]
+line_comments = ["; "]

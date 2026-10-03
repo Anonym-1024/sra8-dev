@@ -1,0 +1,392 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Y",
+  "scopeName": "source.ylang",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#character"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#declaration"
+    },
+    {
+      "include": "#case"
+    },
+    {
+      "include": "#parameter"
+    },
+    {
+      "include": "#type-after-colon"
+    },
+    {
+      "include": "#returns"
+    },
+    {
+      "include": "#prefixed-type"
+    },
+    {
+      "include": "#keyword"
+    },
+    {
+      "include": "#type"
+    },
+    {
+      "include": "#constant"
+    },
+    {
+      "include": "#builtin"
+    },
+    {
+      "include": "#call"
+    },
+    {
+      "include": "#operator"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.ylang",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.ylang",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "match": "^\\s*(!INCLUDE)\\s+(.*?)\\s*(?=//|$)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.include.ylang"
+            },
+            "2": {
+              "name": "string.unquoted.include.ylang"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(!(?:DEFINE|IFDEF|IFNDEF))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.directive.define.ylang"
+            },
+            "2": {
+              "name": "entity.name.function.preprocessor.ylang"
+            }
+          }
+        },
+        {
+          "name": "keyword.control.directive.define.ylang",
+          "match": "!(?:ELSE|ENDIF)\\b"
+        },
+        {
+          "name": "keyword.control.directive.define.ylang",
+          "match": "![A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.ylang",
+      "begin": "\\b(s)?(\\\")",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.modifier.static-string.ylang"
+        }
+      },
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ylang",
+          "match": "\\\\[ntr0\\\\'\\\"]"
+        },
+        {
+          "name": "invalid.illegal.escape.ylang",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "character": {
+      "name": "constant.character.ylang",
+      "match": "'(?:\\\\[ntr0\\\\'\\\"]|[^'\\\\])'"
+    },
+    "number": {
+      "name": "constant.numeric.ylang",
+      "match": "\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|[0-9]+)[uUlL]*\\b"
+    },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "\\b(decl|impl)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)(?=\\s*fn\\b)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.ylang"
+            },
+            "2": {
+              "name": "entity.name.function.ylang"
+            },
+            "3": {
+              "name": "punctuation.separator.type.ylang"
+            }
+          }
+        },
+        {
+          "match": "\\b(decl)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)(?=\\s*type\\b)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.ylang"
+            },
+            "2": {
+              "name": "entity.name.type.ylang"
+            },
+            "3": {
+              "name": "punctuation.separator.type.ylang"
+            }
+          }
+        },
+        {
+          "match": "\\b(decl|var)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.ylang"
+            },
+            "2": {
+              "name": "variable.other.declaration.ylang"
+            },
+            "3": {
+              "name": "punctuation.separator.type.ylang"
+            }
+          }
+        },
+        {
+          "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+          "captures": {
+            "1": {
+              "name": "storage.type.declaration.ylang"
+            },
+            "2": {
+              "name": "entity.name.type.ylang"
+            },
+            "3": {
+              "name": "keyword.operator.assignment.ylang"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.compound.ylang"
+            },
+            "2": {
+              "name": "entity.name.function.ylang"
+            }
+          }
+        }
+      ]
+    },
+    "case": {
+      "patterns": [
+        {
+          "match": "\\b(case)\\b([^:]*)(:)\\s*",
+          "captures": {
+            "1": {
+              "name": "keyword.control.ylang"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#number"
+                },
+                {
+                  "include": "#character"
+                },
+                {
+                  "include": "#constant"
+                },
+                {
+                  "include": "#preprocessor"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.separator.case.ylang"
+            }
+          }
+        },
+        {
+          "match": "\\b(default)\\s*(:)\\s*",
+          "captures": {
+            "1": {
+              "name": "keyword.control.ylang"
+            },
+            "2": {
+              "name": "punctuation.separator.case.ylang"
+            }
+          }
+        }
+      ]
+    },
+    "parameter": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(:)(?=\\s*(?:(?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])|[A-Za-z_]))",
+      "captures": {
+        "1": {
+          "name": "variable.parameter.ylang"
+        },
+        "2": {
+          "name": "punctuation.separator.type.ylang"
+        }
+      }
+    },
+    "type-after-colon": {
+      "match": "(?<=:)\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.type.ylang"
+        },
+        "2": {
+          "name": "storage.type.primitive.ylang"
+        },
+        "3": {
+          "name": "storage.type.compound.ylang"
+        },
+        "4": {
+          "name": "entity.name.type.ylang"
+        }
+      }
+    },
+    "returns": {
+      "match": "\\b(returns)\\b\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))?",
+      "captures": {
+        "1": {
+          "name": "keyword.other.returns.ylang"
+        },
+        "2": {
+          "name": "keyword.operator.type.ylang"
+        },
+        "3": {
+          "name": "storage.type.primitive.ylang"
+        },
+        "4": {
+          "name": "storage.type.compound.ylang"
+        },
+        "5": {
+          "name": "entity.name.type.ylang"
+        }
+      }
+    },
+    "prefixed-type": {
+      "match": "((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])+)(?:\\b(uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.type.ylang"
+        },
+        "2": {
+          "name": "storage.type.primitive.ylang"
+        },
+        "3": {
+          "name": "storage.type.compound.ylang"
+        },
+        "4": {
+          "name": "entity.name.type.ylang"
+        }
+      }
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.operator.logical.ylang",
+          "match": "\\b(?:and|gte|neq|not|sme|eq|gt|or|sm)\\b"
+        },
+        {
+          "name": "keyword.control.ylang",
+          "match": "\\b(?:continue|default|return|switch|break|while|case|else|goto|for|do|if)\\b"
+        },
+        {
+          "name": "storage.type.declaration.ylang",
+          "match": "\\b(?:internal|decl|impl|type|var)\\b"
+        },
+        {
+          "name": "storage.type.compound.ylang",
+          "match": "\\b(?:struct|union|fn)\\b"
+        },
+        {
+          "name": "keyword.other.ylang",
+          "match": "\\b(?:returns|asm)\\b"
+        }
+      ]
+    },
+    "type": {
+      "name": "storage.type.primitive.ylang",
+      "match": "\\b(?:uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b"
+    },
+    "constant": {
+      "name": "constant.language.ylang",
+      "match": "\\b(?:false|null|true)\\b"
+    },
+    "builtin": {
+      "name": "support.function.builtin.ylang",
+      "match": "@[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "call": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.call.ylang"
+        }
+      }
+    },
+    "operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.ylang",
+          "match": "<<|>>|[-+&|~]"
+        },
+        {
+          "name": "keyword.operator.assignment.ylang",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.type.ylang",
+          "match": "\\*"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.statement.ylang",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.comma.ylang",
+          "match": ","
+        },
+        {
+          "name": "punctuation.accessor.ylang",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}
