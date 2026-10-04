@@ -85,11 +85,14 @@ def grammar() -> dict:
                 {"name": "keyword.control.directive.define.ylang", "match": r"!(?:ELSE|ENDIF)\b"},
                 {"name": "keyword.control.directive.define.ylang", "match": "!" + IDENT},
             ]},
+            # "..." and s"...": not \b(s)?" -- without the s, \b would need a word
+            # character before the quote, so "abc" started at its closing quote.
+            # A string may not span lines: an unterminated one ends with the line.
             "string": {
                 "name": "string.quoted.double.ylang",
-                "begin": r"\b(s)?(\")",
+                "begin": r"(?:(?<![A-Za-z0-9_])(s))?(\")",
                 "beginCaptures": {"1": {"name": "storage.modifier.static-string.ylang"}},
-                "end": "\"",
+                "end": r"\"|$",
                 "patterns": [{"name": "constant.character.escape.ylang", "match": ESCAPES},
                              {"name": "invalid.illegal.escape.ylang", "match": r"\\."}],
             },

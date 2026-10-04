@@ -119,13 +119,13 @@
     },
     "string": {
       "name": "string.quoted.double.ylang",
-      "begin": "\\b(s)?(\\\")",
+      "begin": "(?:(?<![A-Za-z0-9_])(s))?(\\\")",
       "beginCaptures": {
         "1": {
           "name": "storage.modifier.static-string.ylang"
         }
       },
-      "end": "\"",
+      "end": "\\\"|$",
       "patterns": [
         {
           "name": "constant.character.escape.ylang",
