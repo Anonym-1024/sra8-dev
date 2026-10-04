@@ -43,9 +43,9 @@ var banner: *[7]char = s"ready\n";
 var cursor: [*]char = s"Hello.";
 var anything: *opaque = nullptr;
 var on_key: *handler = @ptr(uart_putc);
-internal var scratch: [256]uint8 = undefined;
-internal var current: line = {text = {0, _}, length = 0};
-internal var flag: bool = false;
+@internal var scratch: [256]uint8 = undefined;
+@internal var current: line = {text = {0, _}, length = 0};
+@internal var flag: bool = false;
 
 impl manhattan: fn(a: *point, b: *point) returns int16 {
     var dx: int16 = [a].x - [b].x;
@@ -59,7 +59,7 @@ impl manhattan: fn(a: *point, b: *point) returns int16 {
     return dx + dy;
 }
 
-internal impl append: fn(l: *line, c: char) returns bool {
+@internal impl append: fn(l: *line, c: char) returns bool {
     if ([l].length ge !LINE_LENGTH - 1) {
         return false;
     }
@@ -117,6 +117,12 @@ impl pointers: fn(p: *[4]int8, many: [*]int8, f: *fn(c: char)) {
     if (any ne nullptr and where gt 0x1000) {
         f('x');
     }
+}
+
+// a function that calls itself must be @recursive (so must its decl)
+@recursive impl count_down: fn(n: uint8) returns uint16 {
+    if (n eq 0) { return 0; }
+    return @cast(uint16)n + count_down(n - 1);
 }
 
 impl search: fn(rows: *[2][3]int8, wanted: int8) returns bool {

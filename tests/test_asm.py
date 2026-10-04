@@ -87,7 +87,7 @@ class Linkage(unittest.TestCase):
         self.assertEqual(o.imports(), ["f"])
         r = o.relocations[0]
         self.assertEqual((r.type, r.symbol, r.addend, r.target), ("IMM16", "f", 4, None))
-        self.assertEqual(bytes(o.sections[0].data), bytes([0x06, 0xBC, 0x00, 0x04]))
+        self.assertEqual(bytes(o.sections[0].data), bytes([0x07, 0x5C, 0x00, 0x04]))
 
     def test_unused_import_warns(self):
         r = asm_text(".import f\nmov r0, #0\n")

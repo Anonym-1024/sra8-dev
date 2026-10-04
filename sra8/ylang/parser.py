@@ -2,8 +2,8 @@
 
 Node kinds and their attributes:
 
-top level   decl(name, type | is_type)  typedef(name, type)
-            impl(name, params, ret, body, internal, main, section)
+top level   decl(name, type | is_type, recursive)  typedef(name, type)
+            impl(name, params, ret, body, internal, recursive, main, section)
             var(name, type, value, internal)        value: expression, init or None for `undefined`
 types       tname(name)  tptr(target)  tmany(target)  tarray(length | None for _, elem)
             tstruct(fields, union)  tfn(params, ret)
@@ -79,7 +79,7 @@ class Parser:
 
     def top_item(self) -> Node:
         where = self.tok.where
-        main, section = False, None
+        main, section, internal, recursive = False, None, False, False
         while self.tok.kind == "builtin":
             b = self.take().text
             if b == "@main":
@@ -88,30 +88,39 @@ class Parser:
                 self.expect("(")
                 section = self.ident()
                 self.expect(")")
+            elif b == "@internal":
+                internal = True
+            elif b == "@recursive":
+                recursive = True
             elif b == "@reg":
-                raise YError("@reg is not supported by ylangc 0.1", where)
+                raise YError("@reg is not supported by ylangc", where)
             else:
                 raise YError("'%s' is not an attribute" % b, where)
-        internal = self.accept("internal")
         if self.at("impl"):
             node = self.impl(internal)
-            node.main, node.section = main, section
+            node.main, node.section, node.recursive = main, section, recursive
             return node
         if main or section:
             raise YError("@main and @section apply to 'impl' only", where)
         if self.at("var"):
+            if recursive:
+                raise YError("@recursive applies to functions only", where)
             return self.var(internal)
         if internal:
-            raise YError("'internal' applies to 'impl' and 'var' only", where)
+            raise YError("@internal applies to 'impl' and 'var' only", where)
         if self.accept("decl"):
             name = self.ident()
             self.expect(":")
             if self.accept("type"):
+                if recursive:
+                    raise YError("@recursive applies to functions only", where)
                 self.expect(";")
-                return Node("decl", where, name=name, type=None, is_type=True)
+                return Node("decl", where, name=name, type=None, is_type=True, recursive=False)
             t = self.type_()
             self.expect(";")
-            return Node("decl", where, name=name, type=t, is_type=False)
+            return Node("decl", where, name=name, type=t, is_type=False, recursive=recursive)
+        if recursive:
+            raise YError("@recursive applies to 'impl' and 'decl' of a function", where)
         if self.accept("type"):
             name = self.ident()
             self.expect("=")
@@ -138,7 +147,7 @@ class Parser:
         ret = self.type_() if self.accept("returns") else None
         body = self.block()
         return Node("impl", where, name=name, params=params, ret=ret, body=body, internal=internal,
-                    main=False, section=None)
+                    recursive=False, main=False, section=None)
 
     def var(self, internal: bool) -> Node:
         where = self.expect("var").where
@@ -224,8 +233,8 @@ class Parser:
         where = t.where
         if t.kind == "builtin":
             if t.text == "@reg":
-                raise YError("@reg is not supported by ylangc 0.1", where)
-            if t.text in ("@main", "@section"):
+                raise YError("@reg is not supported by ylangc", where)
+            if t.text in ("@main", "@section", "@internal", "@recursive"):
                 raise YError("%s applies to a top-level 'impl'" % t.text, where)
         if self.at("var"):
             return self.var(False)

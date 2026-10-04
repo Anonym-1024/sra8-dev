@@ -1,5 +1,6 @@
-"""The Y compiler ylangc 0.1 (docs/ylangc.md): preprocessor, diagnostics,
-static data, and that the output assembles and links."""
+"""The Y compiler ylangc 0.3 (docs/ylangc.md): preprocessor, diagnostics,
+static data, ABI 0.3 static and stack frames, and that the output assembles
+and links."""
 
 import os
 import re
@@ -140,6 +141,9 @@ class Diagnostics(unittest.TestCase):
         "var v: [3]int8 = {1, 2};\n": "2 values for an array of 3",
         "var v: [3]int8 = {1, 2, 3};\nimpl f: fn() returns int8 { return v[3]; }\n": "outside 0 ... 2",
         "impl f: fn() { @reg var x: int8 = 0; }\n": "@reg is not supported",
+        "@recursive decl g: fn();\nimpl g: fn() { }\n": "not @recursive here but is in its decl",
+        "@recursive var x: int8 = 0;\n": "functions only",
+        "@internal decl g: fn();\n": "@internal applies to",
         "impl f: fn() { var x: int8 = undefined; }\n": "globals only",
         "impl f: fn() { break; }\n": "outside a loop",
         "impl g: fn() {}\nvar p: *fn() = @ptr(g);\nimpl f: fn() { [p](); }\n": "called directly",
@@ -149,6 +153,12 @@ class Diagnostics(unittest.TestCase):
         "impl g: fn() {}\nimpl f: fn() { var p: *fn() = g; }\n": "@ptr",
         "decl t: type;\nvar v: t = undefined;\n": "incomplete type",
     }
+
+    def test_recursion_is_not_checked(self):
+        # re-entering a function that is not @recursive is the programmer's
+        # responsibility (ABI 0.3): it compiles
+        self.assertIsNone(error_of("impl f: fn(n: uint8) { if (n ne 0) { f(n - 1); } }\n"))
+        self.assertIsNone(error_of("decl g: fn();\nimpl f: fn() { g(); }\nimpl g: fn() { f(); }\n"))
 
     def test_rejected_with_a_clear_message(self):
         for src, text in self.CASES.items():
@@ -206,15 +216,84 @@ class Output(unittest.TestCase):
             decl used: fn(x: int8);
             decl unused: fn();
             decl shared: int16;
-            internal var hidden: int8 = 0;
-            impl visible: fn() { used(1); shared = 2; }
+            decl pointed: fn();
+            @internal var hidden: int8 = 0;
+            @internal impl helper: fn() { }
+            impl visible: fn() { used(1); shared = 2; var p: *fn() = @ptr(pointed); helper(); }
             """)
         self.assertIn(".import shared", asm)
-        self.assertIn(".import used", asm)
+        self.assertIn(".import used\n", asm)
+        self.assertIn(".import used.frame", asm)       # arguments go to the callee's frame
+        self.assertIn(".import pointed\n", asm)
+        self.assertNotIn("pointed.frame", asm)          # only its address is taken
         self.assertNotIn("unused", asm)
-        self.assertIn(".export visible", asm)
+        self.assertIn(".export visible\n", asm)
+        self.assertIn(".export visible.frame", asm)
         self.assertNotIn(".export hidden", asm)
+        self.assertNotIn(".export helper", asm)
         self.assertNotIn("code vector", asm)          # no @main, no start-up code
+
+    def test_recursive_functions_have_no_static_frame(self):
+        asm = compile_text("""
+            @recursive decl r: fn(x: int8);
+            @recursive impl own: fn(x: int8) { r(x); }
+            """)
+        self.assertIn(".import r\n", asm)
+        self.assertNotIn("r.frame", asm)               # arguments go to the stack
+        self.assertIn(".export own\n", asm)
+        self.assertNotIn("own.frame", asm)
+        self.assertRegex(asm, r"\.addr   0 .*\n\s+\.dword  \d+ .*\nown:")
+
+    def test_static_frames(self):
+        asm = compile_text("""
+            impl add: fn(a: int16, b: int16) returns int16 { return a + b; }
+            """)
+        # header before the entry: frame address and size (result 2, a 2, b 2, saved r12a 2)
+        self.assertRegex(asm, r"\.addr   =add\.frame .*\n\s+\.dword  8 .*\nadd:")
+        self.assertIn("ldr     r0, =add.frame+2", asm)     # a, one instruction
+        self.assertIn("str     r0, =add.frame ", asm)      # the result
+        self.assertIn("add.frame:\n        .res 8", asm)
+        self.assertNotIn("r14", asm)                       # no stack use without recursion
+
+    def test_recursive_functions_use_a_stack_frame(self):
+        asm = compile_text("""
+            @recursive impl f: fn(n: uint8) returns uint8 {
+                if (n eq 0) { return 0; }
+                return f(n - 1) + 1;
+            }
+            """)
+        self.assertRegex(asm, r"\.addr   0 .*\n\s+\.dword  3 .*\nf:")
+        self.assertIn("lea     r14a, r14a, #-3", asm)    # prologue: the frame
+        self.assertIn("sto     r12, r14a, #2", asm)      # the return address
+        self.assertIn("ldo     r0, r14a, #5", asm)       # n, in the caller's area
+        self.assertIn("lea     r14a, r14a, #-2", asm)    # call: result and argument
+        self.assertIn("ldo     r0, r14a, #1", asm)       # the callee's result
+        self.assertIn("lea     r14a, r14a, #3", asm)     # epilogue
+        self.assertNotIn("ldr ", asm)
+        self.assertNotIn("str ", asm)
+
+    def test_indirect_calls_dispatch_on_the_header(self):
+        asm = compile_text("""
+            impl call: fn(f: *fn(x: int8) returns int8, v: int8) returns int8 { return f(v); }
+            """)
+        # the header at the function - 4: its static frame, or 0 when @recursive
+        m = re.search(r"ldo     (r\d), r10a, #-4 .*\n\s+ldo     (r\d), r10a, #-3", asm)
+        self.assertIsNotNone(m)
+        self.assertIn("ord     %s, %s" % m.groups(), asm)
+        self.assertIn("brl     r12a, r10a", asm)
+        self.assertIn("lea     r14a, r14a, #-2", asm)     # the stack path
+
+    def test_large_stack_frames_use_far_offsets(self):
+        asm = compile_text("""
+            @recursive impl f: fn(n: uint8) returns uint8 {
+                var buf: [3000]uint8 = {0, _};
+                buf[2999] = n;
+                if (n ne 0) { _ = f(n - 1); }
+                return buf[2999];
+            }
+            """)
+        self.assertRegex(asm, r"mova    r10a, #\d{4}")
+        self.assertIn("lea     r10a, r14a, r10a", asm)
 
     def test_helpers_only_when_used(self):
         plain = compile_text("impl f: fn(a: int16) returns int16 { return a + a; }\n")
@@ -239,12 +318,13 @@ class Output(unittest.TestCase):
         self.assertEqual(syms["_start"], 0)
         self.assertLess(len(res.image), 4096)
 
-    def test_feature_program_assembles_and_links(self):
-        asm = compile_file(os.path.join(TESTS, "features.y"))
-        r = assemble_text(asm)
-        self.assertEqual(r.errors, [])
-        self.assertEqual(r.warnings, [])
-        link([r.obj], BIG)
+    def test_test_programs_assemble_and_link(self):
+        for name in ("features.y", "recursion.y", "stackframes.y"):
+            asm = compile_file(os.path.join(TESTS, name))
+            r = assemble_text(asm)
+            self.assertEqual(r.errors, [], name)
+            self.assertEqual(r.warnings, [], name)
+            link([r.obj], BIG)
 
     def test_tour_compiles_without_reg(self):
         with open(os.path.join(EXAMPLES, "y", "tour.y")) as f:

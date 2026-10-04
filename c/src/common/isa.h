@@ -29,6 +29,8 @@ typedef struct {
     int regs[2];        /* their widths: 8 or 16 */
     int src;            /* width of the last operand (register or immediate), 0 = none */
     const char *syntax;
+    int imm_bits;       /* width of the immediate if not src (the 12 bit offsets), else 0 */
+    bool imm_signed;
 } Format;
 
 typedef struct {
@@ -63,6 +65,7 @@ extern const char *const ISA_GROUPS[];
 extern const size_t ISA_N_GROUPS;
 
 static inline int fmt_operands(const Format *f) { return f->nregs + (f->src ? 1 : 0); }
+static inline int fmt_imm_width(const Format *f) { return f->imm_bits ? f->imm_bits : f->src; }
 static inline int isa_cycles(const Instr *ins) { return ISA_CLOCKS_PER_STEP * (ISA_FETCH_STEPS + ins->steps); }
 constexpr int ISA_SKIPPED_CYCLES = 4 * (11 + 1);
 
@@ -72,6 +75,8 @@ const Instr *isa_opcode(int opcode, bool *imm); /* nullptr for undefined opcodes
 
 /* -2**(bits-1) .. 2**bits - 1, returns the two's complement field. */
 bool isa_fit(long long value, int bits, long long *field);
+/* the immediate field of format f: isa_fit, or a signed range for the offsets */
+bool isa_fit_imm(const Format *f, long long value, long long *field);
 
 void isa_encode(uint8_t out[4], int cond, int opcode, const int args[3], long long imm);
 

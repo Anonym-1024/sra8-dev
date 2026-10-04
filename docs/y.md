@@ -21,7 +21,7 @@ does nothing else.
 type point = struct{x: int16, y: int16};
 
 var origin: point = {x = 0, y = 0};     // exported global
-internal var count: uint8 = 0;          // visible in this file only
+@internal var count: uint8 = 0;         // visible in this file only
 
 impl manhattan: fn(a: *point, b: *point) returns int16 {
     var dx: int16 = [a].x - [b].x;
@@ -121,7 +121,7 @@ decl uart_putc: fn(c: char);
 *Provisional; the final list will be fixed later.*
 
 ```
-decl  impl  var  type  internal  fn  returns  struct  union  opaque
+decl  impl  var  type  fn  returns  struct  union  opaque
 if  else  loop  break  continue  return
 eq  ne  lt  le  gt  ge  not  and  or
 shl  shr  sar  rol  ror
@@ -130,7 +130,7 @@ int8  int16  int32  uint8  uint16  uint32  byte  char  bool  addr
 ```
 
 Builtins are written with a leading `@` and are not keywords:
-`@bool @sizeof @as @cast @ptr @main @section @reg`. Any other `@name` is an
+`@bool @sizeof @as @cast @ptr @main @section @reg @internal @recursive`. Any other `@name` is an
 error.
 
 ### 4.4 Integer literals
@@ -342,7 +342,7 @@ incomplete.
 ### 7.1 Top level
 
 ```
-top_item = decl | type_def | { attribute } [ "internal" ] ( impl | var ) ;
+top_item = { attribute } ( decl | impl | var ) | type_def ;
 ```
 
 ### 7.2 `decl`: forward declaration and import
@@ -363,7 +363,8 @@ decl user: type;
 - A name may be declared with `decl` **only once** per file (after includes
   are expanded). Use include guards in headers.
 - `decl` carries no linkage of its own: whether a later definition is
-  exported is decided by the definition (`internal` or not).
+  exported is decided by the definition (`@internal` or not). A `decl` of a
+  function that is `@recursive` must say so too: `@recursive decl f: fn(…);`.
 - `decl name: type;` declares a type name that is incomplete until
   `type name = …;` follows. Types are never imported or exported: a type
   shared by several files is defined in a header.
@@ -374,7 +375,7 @@ decl user: type;
 var count: uint8 = 0;
 var buffer: [64]char = {0, _};
 var greeting: [_]char = "Hello.";
-internal var state: bool = false;
+@internal var state: bool = false;
 var scratch: [256]uint8 = undefined;      // global only
 ```
 
@@ -383,7 +384,7 @@ var scratch: [256]uint8 = undefined;      // global only
   contents unspecified. For a **local** variable it is any expression or
   initialiser of the type; `undefined` is not allowed.
 - The type must be complete.
-- A global variable is **exported** unless it is `internal`.
+- A global variable is **exported** unless it is `@internal`.
 
 ### 7.4 `impl`: functions
 
@@ -397,13 +398,19 @@ impl add: fn(a: int8, b: int8) returns int8 {
   name. The body is a block.
 - `impl` declares the name from this point on; an earlier `decl` must
   match it exactly.
-- A function is **exported** unless it is `internal`.
+- A function is **exported** unless it is `@internal`.
 - Parameters are local variables of the function, initialised with copies
   of the arguments; they may be assigned.
 - `return expr;` ends the function with a result, `return;` without one.
   Whether every path ends with a `return` is **not checked**; falling off
   the end of a function that has a result type gives an unspecified result.
-- Functions may call themselves (recursion).
+- **A function is not re-entrant unless it is `@recursive`** (7.7). A
+  function that can be called again while it runs, directly (`f` calls
+  `f`) or through other functions (`f` calls `g`, `g` calls `f`), must be
+  marked `@recursive`, and so must every other function of such a cycle.
+  **This is the programmer's responsibility**: the compiler does not check
+  it, and a function without the mark that is re-entered behaves
+  unpredictably (its parameters and locals are shared by all its calls).
 
 ### 7.5 `type`: type names
 
@@ -417,9 +424,9 @@ type handler = fn(c: char);
 type. If `name` was declared with `decl name: type;`, it becomes complete
 here.
 
-### 7.6 `internal`
+### 7.6 `@internal`
 
-`internal` before `var` or `impl` (top level only) keeps the definition
+`@internal` before `var` or `impl` (top level only) keeps the definition
 local to its file: it is not exported. It is not allowed on `decl` or
 `type`.
 
@@ -432,6 +439,10 @@ Attributes are written before the declaration they apply to.
 | `@main` | `impl` | Marks the entry function of the program. At most one per file. Its required signature and how it is started will be defined with the calling convention. |
 | `@section(name)` | `impl` | Places the code of the function in the named code section (`.code name` in assembly), for the linker script to place. |
 | `@reg` | local `var` | Asks the compiler to keep the variable in a register if it can. `@ptr` of the variable is an error. |
+| `@internal` | top-level `impl`, `var` | Not exported (7.6). |
+| `@recursive` | `impl`, and the `decl` of a function | The function may be re-entered (7.4). A `decl` and the `impl` of the same function must agree. |
+
+Several attributes may precede one declaration, in any order.
 
 ```
 @section(isr)
@@ -439,6 +450,9 @@ impl handler: fn() { … }
 
 @main
 impl start: fn() { … }
+
+@internal @recursive
+impl walk: fn(n: *node) returns uint16 { … }
 ```
 
 ---
@@ -807,14 +821,14 @@ reinterprets `p[i]`.
 
 - A program is several `.y` and `.s` files, each translated separately and
   linked by `sra8-ld`.
-- Every non-`internal` `impl` and global `var` is exported under its own
+- Every non-`@internal` `impl` and global `var` is exported under its own
   name; every name that is declared with `decl` but not defined in the file
   is imported. Types are not exported; headers (`.yh`) carry shared types
   and the `decl`s of exported names.
 - Y names are the assembly label names, unchanged, so Y and assembly can
   refer to each other's symbols.
 
-The compiler `ylangc` and the calling convention of its version 0.1 are
+The compiler `ylangc` and the calling convention of its version 0.3 are
 described in [ylangc.md](ylangc.md):
 
 ```
@@ -826,9 +840,10 @@ ylangc [-o out.s] [-I dir]... [-D NAME[=text]]... file.y
 ## 13. Not specified yet
 
 - **The final calling convention (ABI).** [ylangc.md](ylangc.md) defines
-  ABI 0.1, the simplest one that works: everything on the stack, every
-  register changed by a call. It will be replaced.
-- **`@reg`**: ylangc 0.1 does not support it.
+  ABI 0.3, a simple one: a static frame per function, a stack frame for
+  each call of a `@recursive` function, every register changed by a call.
+  It will be replaced.
+- **`@reg`**: ylangc does not support it yet.
 - **Hardware access:** the UART port instructions (`ptr`, `ptw`),
   interrupt control (`intrr`, `intrw`, `psrw`), interrupt handlers (saving
   registers and leaving with `intrw #0`), inline assembly. `@section(isr)`
@@ -854,8 +869,8 @@ of 11.2; the grammar below lists the forms only.
 
 ```
 file          = { top_item } ;
-top_item      = decl | type_def | { attribute } [ "internal" ] ( impl | var ) ;
-attribute     = "@main" | "@section" "(" ident ")" ;
+top_item      = { attribute } ( decl | impl | var ) | type_def ;
+attribute     = "@main" | "@section" "(" ident ")" | "@internal" | "@recursive" ;
 
 decl          = "decl" ident ":" ( type | "type" ) ";" ;
 type_def      = "type" ident "=" type ";" ;
@@ -928,10 +943,10 @@ prefix in a type and a dereference in an expression, without ambiguity.
 
 type line = struct{text: [32]char, length: uint8};
 
-internal var current: line = {text = {0, _}, length = 0};
+@internal var current: line = {text = {0, _}, length = 0};
 
 // append c; false when the line is full
-internal impl append: fn(l: *line, c: char) returns bool {
+@internal impl append: fn(l: *line, c: char) returns bool {
     if ([l].length ge 31) {
         return false;
     }

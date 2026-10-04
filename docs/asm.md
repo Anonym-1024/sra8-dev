@@ -35,13 +35,17 @@ pseudo-instructions; the usual idioms are:
 | stop | `.l spin: br .b =spin` |
 | 16-bit add | `adds lo, lo, x` then `addc hi, hi, y` |
 | 16-bit subtract | `subs lo, lo, x` then `subc hi, hi, y` |
+| byte at SP + k | `ldo r0, r14a, #k` / `sto r0, r14a, #k` |
+| SP −= n | `lea r14a, r14a, #-n` (no flags change) |
+| push a byte | `sti r0, r14a, #-1` |
+| walk a string | `ldi r0, r2a, #1` (r0 = the byte, then r2a + 1) |
 
 ## Operands
 
 | Operand | Meaning |
 |---|---|
 | `rN`, `rNa` | register, register pair |
-| `#number` | immediate, 8 or 16 bits by instruction format (−128 … 255, −32768 … 65535) |
+| `#number` | immediate, 8 or 16 bits by instruction format (−128 … 255, −32768 … 65535); the offset of `ldo`, `sto`, `ldi`, `sti`, `lea` is signed 12 bits (−2048 … 2047) |
 | `=label` | address of a label, wherever a 16-bit immediate is allowed |
 | `=label + n`, `=label - n` | address plus or minus a constant |
 | `.b =label`, `.f =label` | nearest local label before / after this line; `± n` works here too |

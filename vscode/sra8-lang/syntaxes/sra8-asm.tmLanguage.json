@@ -164,7 +164,7 @@
     },
     "mnemonic": {
       "name": "keyword.mnemonic.sra8asm",
-      "match": "(?i)\\b(?:intpcr|intpcw|addcd|addcs|intrr|intrw|ptbrr|ptbrw|subcd|subcs|addc|adds|andd|ands|asrd|asrs|csld|csls|csrd|csrs|eord|eors|lsld|lsls|lsrd|lsrs|mova|psrr|psrw|subc|subs|xpcr|xpcw|add|and|asr|brl|cmn|cmp|csl|csr|eor|ldr|lsl|lsr|mov|ord|ors|pcr|pcw|ptr|ptw|str|sub|svc|br|or)(?:\\.(?:ges|geu|nvr|ses|seu|al|eq|gs|gu|mi|ne|pl|ss|su|vc|vs))?\\b"
+      "match": "(?i)\\b(?:intpcr|intpcw|addcd|addcs|intrr|intrw|ptbrr|ptbrw|subcd|subcs|addc|adds|andd|ands|asrd|asrs|csld|csls|csrd|csrs|eord|eors|lsld|lsls|lsrd|lsrs|mova|psrr|psrw|subc|subs|xpcr|xpcw|add|and|asr|brl|cmn|cmp|csl|csr|eor|ldi|ldo|ldr|lea|lsl|lsr|mov|ord|ors|pcr|pcw|ptr|ptw|sti|sto|str|sub|svc|br|or)(?:\\.(?:ges|geu|nvr|ses|seu|al|eq|gs|gu|mi|ne|pl|ss|su|vc|vs))?\\b"
     },
     "register": {
       "patterns": [

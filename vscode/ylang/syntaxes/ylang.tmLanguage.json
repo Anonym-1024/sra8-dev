@@ -293,7 +293,7 @@
         },
         {
           "name": "storage.type.declaration.ylang",
-          "match": "\\b(?:internal|decl|impl|type|var)\\b"
+          "match": "\\b(?:decl|impl|type|var)\\b"
         },
         {
           "name": "storage.type.compound.ylang",
@@ -321,7 +321,7 @@
         },
         {
           "name": "storage.modifier.attribute.ylang",
-          "match": "@(?:main|section|reg)\\b"
+          "match": "@(?:main|section|reg|internal|recursive)\\b"
         },
         {
           "name": "invalid.illegal.builtin.ylang",

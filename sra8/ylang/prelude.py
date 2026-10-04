@@ -6,7 +6,7 @@ for the toolchain (docs/y.md 4.2)."""
 from __future__ import annotations
 
 _TEMPLATE = """
-internal impl __mul{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
+@internal impl __mul{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     var r: uint{w} = 0;
     loop {{
         if (b eq 0) {{ break; }}
@@ -17,7 +17,7 @@ internal impl __mul{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     return r;
 }}
 
-internal impl __divu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
+@internal impl __divu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     var q: uint{w} = 0;
     var r: uint{w} = 0;
     var i: uint8 = {w};
@@ -35,7 +35,7 @@ internal impl __divu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     return q;
 }}
 
-internal impl __modu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
+@internal impl __modu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     var r: uint{w} = 0;
     var i: uint8 = {w};
     loop {{
@@ -48,7 +48,7 @@ internal impl __modu{w}: fn(a: uint{w}, b: uint{w}) returns uint{w} {{
     return r;
 }}
 
-internal impl __divs{w}: fn(a: int{w}, b: int{w}) returns int{w} {{
+@internal impl __divs{w}: fn(a: int{w}, b: int{w}) returns int{w} {{
     var negative: bool = false;
     var ua: uint{w} = @cast(uint{w})a;
     var ub: uint{w} = @cast(uint{w})b;
@@ -65,7 +65,7 @@ internal impl __divs{w}: fn(a: int{w}, b: int{w}) returns int{w} {{
     return q;
 }}
 
-internal impl __mods{w}: fn(a: int{w}, b: int{w}) returns int{w} {{
+@internal impl __mods{w}: fn(a: int{w}, b: int{w}) returns int{w} {{
     var ua: uint{w} = @cast(uint{w})a;
     var ub: uint{w} = @cast(uint{w})b;
     if (a lt 0) {{ ua = @cast(uint{w})(-a); }}

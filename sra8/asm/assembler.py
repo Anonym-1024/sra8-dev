@@ -252,11 +252,13 @@ class Assembler:
                     self.warnings.append("%s: r15a has no high register, the high byte wraps to r0" % item.where)
             elif not is_src:
                 raise AsmError("operand %d of '%s' must be a register" % (i + 1, ins.mnemonic))
-            elif isinstance(op, LabelRef) and bits != 16:
-                raise AsmError("'%s' takes an 8 bit immediate, a label reference is not allowed" % ins.mnemonic)
+            elif isinstance(op, LabelRef) and ins.fmt.imm_width != 16:
+                raise AsmError("'%s' takes %s, a label reference is not allowed"
+                               % (ins.mnemonic, "a signed 12 bit offset" if ins.fmt.imm_signed
+                                  else "an 8 bit immediate"))
             elif isinstance(op, Imm):
                 try:
-                    isa.fit(op.value, bits)
+                    isa.fit_imm(ins.fmt, op.value)
                 except isa.EncodeError as e:
                     raise AsmError(str(e))
 
@@ -318,7 +320,7 @@ class Assembler:
                 args[i] = op.n
             elif isinstance(op, Imm):
                 opcode |= 1
-                imm = isa.fit(op.value, ins.fmt.src)
+                imm = isa.fit_imm(ins.fmt, op.value)
             elif isinstance(op, LabelRef) and is_src:
                 opcode |= 1
                 imm = self.add_reloc(item, item.offset, "IMM16", op)

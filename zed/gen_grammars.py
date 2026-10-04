@@ -190,12 +190,12 @@ Y = grammar("ylang", {
     "alias": pat(r"![A-Za-z_][A-Za-z0-9_]*"),
 
     # declarations (docs/y.md 7); attributes are items of their own, before what they apply to
-    "attribute": choice("@main", "@reg", seq("@section", "(", field("name", "$identifier"), ")")),
+    "attribute": choice("@main", "@reg", "@internal", "@recursive", seq("@section", "(", field("name", "$identifier"), ")")),
     "declaration": seq("decl", field("name", "$identifier"), ":", field("type", choice("$_type", "type")), ";"),
     "type_definition": seq("type", field("name", "$identifier"), "=", field("value", "$_type"), ";"),
-    "implementation": seq(opt("internal"), "impl", field("name", "$identifier"), ":",
+    "implementation": seq("impl", field("name", "$identifier"), ":",
                           field("type", "$function_type"), field("body", "$block")),
-    "variable_declaration": seq(opt("internal"), "var", field("name", "$identifier"), ":",
+    "variable_declaration": seq("var", field("name", "$identifier"), ":",
                                 field("type", "$_type"), "=", field("value", choice("$_value", "undefined")), ";"),
 
     # types: prefixes, read left to right (docs/y.md 5.8)

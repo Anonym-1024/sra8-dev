@@ -1,5 +1,5 @@
 // Compiler test program: the checks store into out[k]. Checked by running it on
-// the RTL and an instruction simulator while ylangc 0.1 was written; the test
+// the RTL and an instruction simulator while ylangc was written; the test
 // suite only compiles, assembles and links it.
 
 type point = struct{x: int16, y: int16};
@@ -21,29 +21,29 @@ var pnode: *node = @ptr(nodes[1]);
 var scratch: [16]uint8 = undefined;
 var flag: bool = true;
 
-decl odd: fn(n: uint8) returns bool;
+@recursive decl odd: fn(n: uint8) returns bool;
 
 impl put: fn(v: int32) {
     out[n_out] = v;
     n_out += 1;
 }
 
-impl even: fn(n: uint8) returns bool {
+@recursive impl even: fn(n: uint8) returns bool {
     if (n eq 0) { return true; }
     return odd(n - 1);
 }
 
-impl odd: fn(n: uint8) returns bool {
+@recursive impl odd: fn(n: uint8) returns bool {
     if (n eq 0) { return false; }
     return even(n - 1);
 }
 
-impl fact: fn(n: uint16) returns uint32 {
+@recursive impl fact: fn(n: uint16) returns uint32 {
     if (n le 1) { return 1; }
     return @cast(uint32)n * fact(n - 1);
 }
 
-impl fib: fn(n: int16) returns int16 {
+@recursive impl fib: fn(n: int16) returns int16 {
     if (n lt 2) { return n; }
     return fib(n - 1) + fib(n - 2);
 }

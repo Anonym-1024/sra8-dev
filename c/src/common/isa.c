@@ -5,15 +5,17 @@
 #include <string.h>
 
 const Format ISA_FORMATS[] = {
-    {"NONE", 0, {0, 0}, 0, ""},
-    {"RD", 1, {8, 0}, 0, "rD"},
-    {"RDA", 1, {16, 0}, 0, "rDa"},
-    {"SRC8", 0, {0, 0}, 8, "rS / #imm8"},
-    {"SRC16", 0, {0, 0}, 16, "rSa / #imm16"},
-    {"RD_SRC8", 1, {8, 0}, 8, "rD, rS / #imm8"},
-    {"RD_SRC16", 1, {8, 0}, 16, "rD, rSa / #imm16"},
-    {"RDA_SRC16", 1, {16, 0}, 16, "rDa, rSa / #imm16"},
-    {"ALU3", 2, {8, 8}, 8, "rD, rN, rM / #imm8"},
+    {"NONE", 0, {0, 0}, 0, "", 0, false},
+    {"RD", 1, {8, 0}, 0, "rD", 0, false},
+    {"RDA", 1, {16, 0}, 0, "rDa", 0, false},
+    {"SRC8", 0, {0, 0}, 8, "rS / #imm8", 0, false},
+    {"SRC16", 0, {0, 0}, 16, "rSa / #imm16", 0, false},
+    {"RD_SRC8", 1, {8, 0}, 8, "rD, rS / #imm8", 0, false},
+    {"RD_SRC16", 1, {8, 0}, 16, "rD, rSa / #imm16", 0, false},
+    {"RDA_SRC16", 1, {16, 0}, 16, "rDa, rSa / #imm16", 0, false},
+    {"ALU3", 2, {8, 8}, 8, "rD, rN, rM / #imm8", 0, false},
+    {"RD_RA_OFF12", 2, {8, 16}, 16, "rD, rBa, rOa / #off12", 12, true},
+    {"RDA_RA_OFF12", 2, {16, 16}, 16, "rDa, rBa, rOa / #off12", 12, true},
 };
 const size_t ISA_N_FORMATS = sizeof ISA_FORMATS / sizeof ISA_FORMATS[0];
 
@@ -26,6 +28,8 @@ const size_t ISA_N_FORMATS = sizeof ISA_FORMATS / sizeof ISA_FORMATS[0];
 #define F_RD_SRC16 (&ISA_FORMATS[6])
 #define F_RDA_SRC16 (&ISA_FORMATS[7])
 #define F_ALU3 (&ISA_FORMATS[8])
+#define F_RD_RA_OFF12 (&ISA_FORMATS[9])
+#define F_RDA_RA_OFF12 (&ISA_FORMATS[10])
 
 #define G_REG "Register and system register moves"
 #define G_MEM "Memory"
@@ -57,51 +61,57 @@ const Instr ISA_INSTRUCTIONS[] = {
     {"ldr", 28, F_RD_SRC16, 6, G_MEM, "rD ← mem[addr]", nullptr, false},
     {"str", 30, F_RD_SRC16, 6, G_MEM, "mem[addr] ← rS  (source register first)", nullptr, false},
 
-    {"add", 32, F_ALU3, 4, G_ALU, "rD ← rN + src", "ADD", false},
-    {"adds", 34, F_ALU3, 4, G_ALU, "rD ← rN + src, flags", "ADD", true},
-    {"addc", 36, F_ALU3, 4, G_ALU, "rD ← rN + src + C", "ADDC", false},
-    {"addcs", 38, F_ALU3, 4, G_ALU, "rD ← rN + src + C, flags", "ADDC", true},
-    {"sub", 40, F_ALU3, 4, G_ALU, "rD ← rN − src", "SUB", false},
-    {"subs", 42, F_ALU3, 4, G_ALU, "rD ← rN − src, flags", "SUB", true},
-    {"subc", 44, F_ALU3, 4, G_ALU, "rD ← rN − src − 1 + C", "SUBC", false},
-    {"subcs", 46, F_ALU3, 4, G_ALU, "rD ← rN − src − 1 + C, flags", "SUBC", true},
-    {"and", 48, F_ALU3, 4, G_ALU, "rD ← rN ∧ src", "AND", false},
-    {"ands", 50, F_ALU3, 4, G_ALU, "rD ← rN ∧ src, flags", "AND", true},
-    {"or", 52, F_ALU3, 4, G_ALU, "rD ← rN ∨ src", "OR", false},
-    {"ors", 54, F_ALU3, 4, G_ALU, "rD ← rN ∨ src, flags", "OR", true},
-    {"eor", 56, F_ALU3, 4, G_ALU, "rD ← rN ⊕ src", "EOR", false},
-    {"eors", 58, F_ALU3, 4, G_ALU, "rD ← rN ⊕ src, flags", "EOR", true},
+    {"ldo", 32, F_RD_RA_OFF12, 8, G_MEM, "rD ← mem[rBa + offset]", nullptr, false},
+    {"sto", 34, F_RD_RA_OFF12, 8, G_MEM, "mem[rBa + offset] ← rS", nullptr, false},
+    {"ldi", 36, F_RD_RA_OFF12, 10, G_MEM, "rD ← mem[rBa]; then rBa ← rBa + offset", nullptr, false},
+    {"sti", 38, F_RD_RA_OFF12, 10, G_MEM, "mem[rBa] ← rS; then rBa ← rBa + offset", nullptr, false},
+    {"lea", 40, F_RDA_RA_OFF12, 7, G_MEM, "rDa ← rBa + offset (no memory access)", nullptr, false},
 
-    {"lsl", 60, F_RD_SRC8, 3, G_SHIFT, "rD ← src << 1", "LSL", false},
-    {"lsls", 62, F_RD_SRC8, 3, G_SHIFT, "rD ← src << 1, flags", "LSL", true},
-    {"lsr", 64, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1", "LSR", false},
-    {"lsrs", 66, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, flags", "LSR", true},
-    {"asr", 68, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, sign kept", "ASR", false},
-    {"asrs", 70, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, sign kept, flags", "ASR", true},
-    {"csl", 72, F_RD_SRC8, 3, G_SHIFT, "rD ← {src[6:0], C}", "CSL", false},
-    {"csls", 74, F_RD_SRC8, 3, G_SHIFT, "rD ← {src[6:0], C}, flags", "CSL", true},
-    {"csr", 76, F_RD_SRC8, 3, G_SHIFT, "rD ← {C, src[7:1]}", "CSR", false},
-    {"csrs", 78, F_RD_SRC8, 3, G_SHIFT, "rD ← {C, src[7:1]}, flags", "CSR", true},
+    {"add", 42, F_ALU3, 4, G_ALU, "rD ← rN + src", "ADD", false},
+    {"adds", 44, F_ALU3, 4, G_ALU, "rD ← rN + src, flags", "ADD", true},
+    {"addc", 46, F_ALU3, 4, G_ALU, "rD ← rN + src + C", "ADDC", false},
+    {"addcs", 48, F_ALU3, 4, G_ALU, "rD ← rN + src + C, flags", "ADDC", true},
+    {"sub", 50, F_ALU3, 4, G_ALU, "rD ← rN − src", "SUB", false},
+    {"subs", 52, F_ALU3, 4, G_ALU, "rD ← rN − src, flags", "SUB", true},
+    {"subc", 54, F_ALU3, 4, G_ALU, "rD ← rN − src − 1 + C", "SUBC", false},
+    {"subcs", 56, F_ALU3, 4, G_ALU, "rD ← rN − src − 1 + C, flags", "SUBC", true},
+    {"and", 58, F_ALU3, 4, G_ALU, "rD ← rN ∧ src", "AND", false},
+    {"ands", 60, F_ALU3, 4, G_ALU, "rD ← rN ∧ src, flags", "AND", true},
+    {"or", 62, F_ALU3, 4, G_ALU, "rD ← rN ∨ src", "OR", false},
+    {"ors", 64, F_ALU3, 4, G_ALU, "rD ← rN ∨ src, flags", "OR", true},
+    {"eor", 66, F_ALU3, 4, G_ALU, "rD ← rN ⊕ src", "EOR", false},
+    {"eors", 68, F_ALU3, 4, G_ALU, "rD ← rN ⊕ src, flags", "EOR", true},
 
-    {"cmn", 80, F_RD_SRC8, 4, G_FLAGS, "flags of rN + src", "ADD", true},
-    {"addcd", 82, F_RD_SRC8, 4, G_FLAGS, "flags of rN + src + C", "ADDC", true},
-    {"cmp", 84, F_RD_SRC8, 4, G_FLAGS, "flags of rN − src", "SUB", true},
-    {"subcd", 86, F_RD_SRC8, 4, G_FLAGS, "flags of rN − src − 1 + C", "SUBC", true},
-    {"andd", 88, F_RD_SRC8, 4, G_FLAGS, "flags of rN ∧ src", "AND", true},
-    {"ord", 90, F_RD_SRC8, 4, G_FLAGS, "flags of rN ∨ src", "OR", true},
-    {"eord", 92, F_RD_SRC8, 4, G_FLAGS, "flags of rN ⊕ src", "EOR", true},
-    {"lsld", 94, F_SRC8, 3, G_FLAGS, "flags of src << 1", "LSL", true},
-    {"lsrd", 96, F_SRC8, 3, G_FLAGS, "flags of src >> 1", "LSR", true},
-    {"asrd", 98, F_SRC8, 3, G_FLAGS, "flags of src >> 1, sign kept", "ASR", true},
-    {"csld", 100, F_SRC8, 3, G_FLAGS, "flags of {src[6:0], C}", "CSL", true},
-    {"csrd", 102, F_SRC8, 3, G_FLAGS, "flags of {C, src[7:1]}", "CSR", true},
+    {"lsl", 70, F_RD_SRC8, 3, G_SHIFT, "rD ← src << 1", "LSL", false},
+    {"lsls", 72, F_RD_SRC8, 3, G_SHIFT, "rD ← src << 1, flags", "LSL", true},
+    {"lsr", 74, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1", "LSR", false},
+    {"lsrs", 76, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, flags", "LSR", true},
+    {"asr", 78, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, sign kept", "ASR", false},
+    {"asrs", 80, F_RD_SRC8, 3, G_SHIFT, "rD ← src >> 1, sign kept, flags", "ASR", true},
+    {"csl", 82, F_RD_SRC8, 3, G_SHIFT, "rD ← {src[6:0], C}", "CSL", false},
+    {"csls", 84, F_RD_SRC8, 3, G_SHIFT, "rD ← {src[6:0], C}, flags", "CSL", true},
+    {"csr", 86, F_RD_SRC8, 3, G_SHIFT, "rD ← {C, src[7:1]}", "CSR", false},
+    {"csrs", 88, F_RD_SRC8, 3, G_SHIFT, "rD ← {C, src[7:1]}, flags", "CSR", true},
 
-    {"br", 104, F_SRC16, 3, G_BR, "current PC ← target", nullptr, false},
-    {"brl", 106, F_RDA_SRC16, 5, G_BR, "rLa ← address of next instruction; current PC ← target", nullptr, false},
+    {"cmn", 90, F_RD_SRC8, 4, G_FLAGS, "flags of rN + src", "ADD", true},
+    {"addcd", 92, F_RD_SRC8, 4, G_FLAGS, "flags of rN + src + C", "ADDC", true},
+    {"cmp", 94, F_RD_SRC8, 4, G_FLAGS, "flags of rN − src", "SUB", true},
+    {"subcd", 96, F_RD_SRC8, 4, G_FLAGS, "flags of rN − src − 1 + C", "SUBC", true},
+    {"andd", 98, F_RD_SRC8, 4, G_FLAGS, "flags of rN ∧ src", "AND", true},
+    {"ord", 100, F_RD_SRC8, 4, G_FLAGS, "flags of rN ∨ src", "OR", true},
+    {"eord", 102, F_RD_SRC8, 4, G_FLAGS, "flags of rN ⊕ src", "EOR", true},
+    {"lsld", 104, F_SRC8, 3, G_FLAGS, "flags of src << 1", "LSL", true},
+    {"lsrd", 106, F_SRC8, 3, G_FLAGS, "flags of src >> 1", "LSR", true},
+    {"asrd", 108, F_SRC8, 3, G_FLAGS, "flags of src >> 1, sign kept", "ASR", true},
+    {"csld", 110, F_SRC8, 3, G_FLAGS, "flags of {src[6:0], C}", "CSL", true},
+    {"csrd", 112, F_SRC8, 3, G_FLAGS, "flags of {C, src[7:1]}", "CSR", true},
 
-    {"ptr", 108, F_RD, 2, G_IO, "rD ← received UART byte; clears the port IRQ line", nullptr, false},
-    {"ptw", 110, F_RD, 2, G_IO, "send rS on the UART (no busy flag)", nullptr, false},
-    {"svc", 112, F_NONE, 2, G_IO, "supervisor call: enter interrupt mode", nullptr, false},
+    {"br", 114, F_SRC16, 3, G_BR, "current PC ← target", nullptr, false},
+    {"brl", 116, F_RDA_SRC16, 5, G_BR, "rLa ← address of next instruction; current PC ← target", nullptr, false},
+
+    {"ptr", 118, F_RD, 2, G_IO, "rD ← received UART byte; clears the port IRQ line", nullptr, false},
+    {"ptw", 120, F_RD, 2, G_IO, "send rS on the UART (no busy flag)", nullptr, false},
+    {"svc", 122, F_NONE, 2, G_IO, "supervisor call: enter interrupt mode", nullptr, false},
 };
 const size_t ISA_N_INSTRUCTIONS = sizeof ISA_INSTRUCTIONS / sizeof ISA_INSTRUCTIONS[0];
 
@@ -171,6 +181,17 @@ bool isa_fit(long long value, int bits, long long *field)
     return true;
 }
 
+bool isa_fit_imm(const Format *f, long long value, long long *field)
+{
+    int bits = fmt_imm_width(f);
+    if (!f->imm_signed)
+        return isa_fit(value, bits, field);
+    if (value < -(1LL << (bits - 1)) || value >= (1LL << (bits - 1)))
+        return false;
+    *field = value & ((1LL << bits) - 1);
+    return true;
+}
+
 void isa_encode(uint8_t out[4], int cond, int opcode, const int args[3], long long imm)
 {
     static const int shifts[3] = {16, 12, 8};
@@ -199,7 +220,7 @@ bool isa_decode(const uint8_t word[4], Decoded *d)
     for (int i = 0; i < d->nregs; i++)
         d->regs[i] = (int)(w >> shifts[i] & 0xF);
     if (imm)
-        d->imm = w & (ins->fmt->src == 8 ? 0xFFu : 0xFFFFu);
+        d->imm = w & ((1u << fmt_imm_width(ins->fmt)) - 1);
     uint8_t again[4];
     isa_encode(again, cond, opcode, d->regs, imm ? d->imm : 0);
     return memcmp(again, word, 4) == 0;
@@ -222,10 +243,15 @@ void isa_text(const Decoded *d, const char *imm_text, Str *out)
             str_add(&ops, ", ");
         bool is_src = f->src && i == n - 1;
         if (is_src && d->imm_form) {
-            if (imm_text)
+            if (imm_text) {
                 str_add(&ops, imm_text);
-            else
+            } else if (f->imm_signed) {
+                int bits = fmt_imm_width(f);
+                long long v = d->imm >> (bits - 1) & 1 ? d->imm - (1LL << bits) : d->imm;
+                str_addf(&ops, "#%lld", v);
+            } else {
                 str_addf(&ops, "#0x%0*llX", widths[i] == 8 ? 2 : 4, d->imm);
+            }
         } else {
             str_addf(&ops, "r%d%s", d->regs[i], widths[i] == 16 ? "a" : "");
         }

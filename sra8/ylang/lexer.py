@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .errors import YError
 
 KEYWORDS = frozenset("""
-decl impl var type internal fn returns struct union opaque
+decl impl var type fn returns struct union opaque
 if else loop break continue return
 eq ne lt le gt ge not and or
 shl shr sar rol ror
@@ -16,7 +16,8 @@ true false nullptr undefined _
 int8 int16 int32 uint8 uint16 uint32 byte char bool addr
 """.split())
 
-BUILTINS = frozenset(["@bool", "@sizeof", "@as", "@cast", "@ptr", "@main", "@section", "@reg"])
+BUILTINS = frozenset(["@bool", "@sizeof", "@as", "@cast", "@ptr", "@main", "@section", "@reg",
+                      "@internal", "@recursive"])
 
 PUNCT = ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
          "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=",

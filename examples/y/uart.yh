@@ -1,4 +1,4 @@
-// The UART routines of uart.s (ABI 0.1, docs/ylangc.md).
+// The UART routines of uart.s (ABI 0.3, docs/ylangc.md).
 
 !IFNDEF UART_YH
 !DEFINE UART_YH

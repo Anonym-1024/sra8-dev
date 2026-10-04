@@ -2,7 +2,7 @@
 
 (comment) @comment
 
-["decl" "impl" "var" "type" "internal" "returns"] @keyword
+["decl" "impl" "var" "type" "returns"] @keyword
 ["struct" "union" "fn"] @keyword
 ["if" "else" "loop" "return" "break" "continue"] @keyword
 
@@ -31,7 +31,7 @@
 
 ; builtins and attributes
 ["@ptr" "@sizeof" "@bool" "@as" "@cast"] @function.builtin
-["@main" "@reg" "@section"] @attribute
+["@main" "@reg" "@section" "@internal" "@recursive"] @attribute
 (attribute name: (identifier) @attribute)
 
 (number) @number

@@ -129,22 +129,48 @@ vector() {
     printf '.code\n%s\n' "$2" > "$T/$1.s"
     asm_bytes "$1" "$3"
 }
-vector v1 "cmp r0, #0xA5" "05 50 00 A5"
-vector v2 "add.ne r9, r9, #1" "92 19 90 01"
-vector v3 "ors r1, r6, r7" "03 61 67 00"
+vector v1 "cmp r0, #0xA5" "05 F0 00 A5"
+vector v2 "add.ne r9, r9, #1" "92 B9 90 01"
+vector v3 "ors r1, r6, r7" "04 01 67 00"
 vector v4 "str r0, r2a" "01 E0 20 00"
 vector v5 "ldr r0, r2a" "01 C0 20 00"
-vector v6 "br r10a" "06 8A 00 00"
-vector v7 "svc" "07 00 00 00"
-vector v8 "ptr r0" "06 C0 00 00"
-vector v9 "ptw r0" "06 E0 00 00"
+vector v6 "br r10a" "07 2A 00 00"
+vector v7 "svc" "07 A0 00 00"
+vector v8 "ptr r0" "07 60 00 00"
+vector v9 "ptw r0" "07 80 00 00"
 vector v10 "intrr r1" "01 A1 00 00"
 vector v11 "psrw #0x40" "01 10 00 40"
-vector v12 "sub.su r7, r7, #1" "42 97 70 01"
-vector v13 "andd r1, #0x10" "05 91 00 10"
+vector v12 "sub.su r7, r7, #1" "43 37 70 01"
+vector v13 "andd r1, #0x10" "06 31 00 10"
 vector v14 "MOV R1, R2" "00 01 20 00"
 vector v15 "mova r2a, #-1" "00 32 FF FF"
 vector v16 "mov r3, #'a'" "00 13 00 61"
+# base + offset, post-increment, lea: rD | rBa | off12 in bits 11:0 or rOa in arg3
+vector v17 "ldo r0, r14a, #5" "02 10 E0 05"
+vector v18 "ldo r1, r2a, r4a" "02 01 24 00"
+vector v19 "sto r5, r8a, #2047" "02 35 87 FF"
+vector v20 "sto r5, r8a, #-2048" "02 35 88 00"
+vector v21 "ldi r3, r2a, #1" "02 53 20 01"
+vector v22 "ldi r3, r2a, r6a" "02 43 26 00"
+vector v23 "sti r0, r14a, #-1" "02 70 EF FF"
+vector v24 "sti r0, r14a, r6a" "02 60 E6 00"
+vector v25 "lea r14a, r14a, #-20" "02 9E EF EC"
+vector v26 "lea r4a, r2a, r6a" "02 84 26 00"
+vector v27 "ldo.eq r0, r2a, #0" "12 10 20 00"
+printf '.code\nldo r0, r2a, #2048\n' | src off_big
+asm_fails off_big "offset 2048 does not fit in 12 signed bits (-2048 ... 2047)"
+printf '.code\nsto r0, r2a, #-2049\n' | src off_small
+asm_fails off_small "offset -2049 does not fit in 12 signed bits"
+printf '.code\nldo r0, r2, #1\n' | src off_base
+asm_fails off_base "must be a 16 bit register pair"
+printf '.import x\n.code\nldo r0, r2a, =x\n' | src off_label
+asm_fails off_label "takes a signed 12 bit offset, a label reference is not allowed"
+printf '.code\nldo r0, r14a, #5\nsti r0, r14a, #-1\nlea r14a, r14a, #-20\nldi r3, r2a, r6a\n' | src off_dis
+obj off_dis
+"$OD" "$T/off_dis.o" > "$T/off_dis.txt"
+for want in "ldo     r0, r14a, #5" "sti     r0, r14a, #-1" "lea     r14a, r14a, #-20" "ldi     r3, r2a, r6a"; do
+    if grep -qF -- "$want" "$T/off_dis.txt"; then ok; else bad "disassembly lacks '$want'" "$(cat "$T/off_dis.txt")"; fi
+done
 
 {
     i=0
@@ -155,7 +181,7 @@ vector v16 "mov r3, #'a'" "00 13 00 61"
 } > "$T/labels.s"
 "$AS" "$T/labels.s" -o "$T/labels.o" && "$LD" -T "$FLAT" -o "$T/labels.bin" "$T/labels.o"
 got=$(hexof "$T/labels.bin" | cut -c329-)
-if [ "$got" = "069000a400d000a406bc00a4" ]; then ok; else bad "label vectors: $got"; fi
+if [ "$got" = "073000a400d000a4075c00a4" ]; then ok; else bad "label vectors: $got"; fi
 
 # ===========================================================================
 section "legacy programs: byte-identical to the legacy assembler"
@@ -283,7 +309,7 @@ br .b =x
 br .f =x
 .l x: br .b =x
 EOF
-asm_bytes locals "00 10 00 00  06 90 00 00  06 90 00 0C  06 90 00 0C"
+asm_bytes locals "00 10 00 00  07 30 00 00  07 30 00 0C  07 30 00 0C"
 printf '.l y: br .f =y\n' | src nolocal
 asm_fails nolocal "no local label 'y' after"
 printf '.l z: br =z\n' | src uselocal
@@ -313,7 +339,7 @@ asm_fails r4 "takes 2 operands"
 printf 'add.xx r0, r0, r0\n' | src r5
 asm_fails r5 "unknown condition"
 printf 'ADD.EQ R1, R2, #3\nBR R4A\n' | src case
-asm_bytes case "12 11 20 03  06 84 00 00"
+asm_bytes case "12 B1 20 03  07 24 00 00"
 printf ".data\n.byte 0b101, 0o17, 0d9, 0x1F, '\\\\n', -1\n.dword 0x1234\n.qword 1\n" | src numbers
 asm_bytes numbers "05 0f 09 1f 0a ff 34 12 01 00 00 00"
 
@@ -368,7 +394,7 @@ printf '.import g\n.export f\nf: brl r12a, =g\n' | src la
 printf '.import f\n.export g\ng: br =f\n' | src lb
 obj la
 obj lb
-ld_bytes cross "$FLAT" "06 BC 00 04  06 90 00 00" "$T/la.o" "$T/lb.o"
+ld_bytes cross "$FLAT" "07 5C 00 04  07 30 00 00" "$T/la.o" "$T/lb.o"
 
 printf '.code\nmov r0, #1\n.code vector\nmov r0, #2\n.data\n.byte 0xAA\n' | src lc
 printf '.code\nmov r0, #3\n.data rodata\n.byte 0xBB\n.data\n.byte 0xCC\n' | src ld2

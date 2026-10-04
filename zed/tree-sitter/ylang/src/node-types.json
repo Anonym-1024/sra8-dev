@@ -3028,11 +3028,19 @@
     "named": false
   },
   {
+    "type": "@internal",
+    "named": false
+  },
+  {
     "type": "@main",
     "named": false
   },
   {
     "type": "@ptr",
+    "named": false
+  },
+  {
+    "type": "@recursive",
     "named": false
   },
   {
@@ -3166,10 +3174,6 @@
   },
   {
     "type": "int8",
-    "named": false
-  },
-  {
-    "type": "internal",
     "named": false
   },
   {

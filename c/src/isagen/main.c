@@ -25,7 +25,8 @@ static void markdown(void)
                 "| Bits | Field |\n|---|---|\n"
                 "| 31:28 | condition |\n| 27 | unused, 0 |\n| 26:20 | opcode; bit 20 = immediate form |\n"
                 "| 19:16 | arg1 |\n| 15:12 | arg2 |\n| 11:8 | arg3 |\n"
-                "| 7:0 | imm8 |\n| 15:0 | imm16 (overlaps arg2 and arg3) |\n\n"
+                "| 7:0 | imm8 |\n| 15:0 | imm16 (overlaps arg2 and arg3) |\n"
+                "| 11:0 | off12, signed: the offset of `ldo`, `sto`, `ldi`, `sti`, `lea` (overlaps arg3) |\n\n"
                 "Register operands fill arg1, arg2, arg3 in the order they are written. "
                 "`rNa` is the pair r(N+1):rN, low byte in rN; r15a wraps to r0 as the high byte.\n\n"
                 "## Operand formats\n\n| Format | Operands |\n|---|---|\n");
@@ -190,7 +191,8 @@ static void check_enum(const char *dir)
     free(path);
 }
 
-/* The ucr step (MUX 3 code 5) ends every instruction; undefined opcodes are all zero. */
+/* The ucr step (MUX 3 code 5, control word bits 5:3) ends every instruction; there are
+ * 16 steps per opcode; undefined opcodes are all zero. */
 static void check_rom(const char *dir)
 {
     char *path = path_join(dir, "control_rom.mem");
@@ -200,19 +202,19 @@ static void check_rom(const char *dir)
         free(path);
         return;
     }
-    unsigned rom[1024] = {};
+    unsigned rom[2048] = {};
     int n = 0;
-    for (char *tok = strtok(text, " \t\r\n"); tok && n < 1024; tok = strtok(nullptr, " \t\r\n"))
+    for (char *tok = strtok(text, " \t\r\n"); tok && n < 2048; tok = strtok(nullptr, " \t\r\n"))
         rom[n++] = (unsigned)strtoul(tok, nullptr, 16);
-    if (n != 1024)
-        fail("%s: %d words, expected 1024", path, n);
+    if (n != 2048)
+        fail("%s: %d words, expected 2048", path, n);
     for (int op = 0; op < 128; op++) {
         bool imm;
         const Instr *ins = isa_opcode(op, &imm);
         int ucr = -1, nonzero = 0;
-        for (int s = 0; s < 8; s++) {
-            nonzero |= rom[op * 8 + s] != 0;
-            if (ucr < 0 && (rom[op * 8 + s] >> 4 & 7) == 5)
+        for (int s = 0; s < 16; s++) {
+            nonzero |= rom[op * 16 + s] != 0;
+            if (ucr < 0 && (rom[op * 16 + s] >> 3 & 7) == 5)
                 ucr = s;
         }
         if (!ins && nonzero)

@@ -32,7 +32,7 @@ class Placement(unittest.TestCase):
         a = asm_ok(".import g\n.export f\nf: brl r12a, =g\n")
         b = asm_ok(".import f\n.export g\ng: br =f\n")
         res = link_objs([a, b])
-        self.assertEqual(res.image, bytes([0x06, 0xBC, 0x00, 0x04, 0x06, 0x90, 0x00, 0x00]))
+        self.assertEqual(res.image, bytes([0x07, 0x5C, 0x00, 0x04, 0x07, 0x30, 0x00, 0x00]))
 
     def test_named_sections_star_and_order(self):
         a = asm_ok(".code\nmov r0, #1\n.code vector\nmov r0, #2\n.data\n.byte 0xAA\n")

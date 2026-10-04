@@ -97,6 +97,12 @@ class Format:
     regs: tuple[int, ...]
     src: int
     syntax: str
+    imm_bits: int = 0           # width of the immediate if not src (the 12 bit offsets)
+    imm_signed: bool = False
+
+    @property
+    def imm_width(self) -> int:
+        return self.imm_bits or self.src
 
     @property
     def n_operands(self) -> int:
@@ -117,6 +123,8 @@ FORMATS: dict[str, Format] = {f.name: f for f in (
     Format("RD_SRC16", (8,), 16, "rD, rSa / #imm16"),
     Format("RDA_SRC16", (16,), 16, "rDa, rSa / #imm16"),
     Format("ALU3", (8, 8), 8, "rD, rN, rM / #imm8"),
+    Format("RD_RA_OFF12", (8, 16), 16, "rD, rBa, rOa / #off12", 12, True),
+    Format("RDA_RA_OFF12", (16, 16), 16, "rDa, rBa, rOa / #off12", 12, True),
 )}
 
 
@@ -163,52 +171,57 @@ INSTRUCTIONS: dict[str, Instr] = {i.mnemonic: i for i in (
 
     _i("ldr", 28, "RD_SRC16", 6, _G_MEM, "rD ← mem[addr]"),
     _i("str", 30, "RD_SRC16", 6, _G_MEM, "mem[addr] ← rS  (source register first)"),
+    _i("ldo", 32, "RD_RA_OFF12", 8, _G_MEM, "rD ← mem[rBa + offset]"),
+    _i("sto", 34, "RD_RA_OFF12", 8, _G_MEM, "mem[rBa + offset] ← rS"),
+    _i("ldi", 36, "RD_RA_OFF12", 10, _G_MEM, "rD ← mem[rBa]; then rBa ← rBa + offset"),
+    _i("sti", 38, "RD_RA_OFF12", 10, _G_MEM, "mem[rBa] ← rS; then rBa ← rBa + offset"),
+    _i("lea", 40, "RDA_RA_OFF12", 7, _G_MEM, "rDa ← rBa + offset (no memory access)"),
 
-    _i("add", 32, "ALU3", 4, _G_ALU, "rD ← rN + src", "ADD"),
-    _i("adds", 34, "ALU3", 4, _G_ALU, "rD ← rN + src, flags", "ADD", True),
-    _i("addc", 36, "ALU3", 4, _G_ALU, "rD ← rN + src + C", "ADDC"),
-    _i("addcs", 38, "ALU3", 4, _G_ALU, "rD ← rN + src + C, flags", "ADDC", True),
-    _i("sub", 40, "ALU3", 4, _G_ALU, "rD ← rN − src", "SUB"),
-    _i("subs", 42, "ALU3", 4, _G_ALU, "rD ← rN − src, flags", "SUB", True),
-    _i("subc", 44, "ALU3", 4, _G_ALU, "rD ← rN − src − 1 + C", "SUBC"),
-    _i("subcs", 46, "ALU3", 4, _G_ALU, "rD ← rN − src − 1 + C, flags", "SUBC", True),
-    _i("and", 48, "ALU3", 4, _G_ALU, "rD ← rN ∧ src", "AND"),
-    _i("ands", 50, "ALU3", 4, _G_ALU, "rD ← rN ∧ src, flags", "AND", True),
-    _i("or", 52, "ALU3", 4, _G_ALU, "rD ← rN ∨ src", "OR"),
-    _i("ors", 54, "ALU3", 4, _G_ALU, "rD ← rN ∨ src, flags", "OR", True),
-    _i("eor", 56, "ALU3", 4, _G_ALU, "rD ← rN ⊕ src", "EOR"),
-    _i("eors", 58, "ALU3", 4, _G_ALU, "rD ← rN ⊕ src, flags", "EOR", True),
+    _i("add", 42, "ALU3", 4, _G_ALU, "rD ← rN + src", "ADD"),
+    _i("adds", 44, "ALU3", 4, _G_ALU, "rD ← rN + src, flags", "ADD", True),
+    _i("addc", 46, "ALU3", 4, _G_ALU, "rD ← rN + src + C", "ADDC"),
+    _i("addcs", 48, "ALU3", 4, _G_ALU, "rD ← rN + src + C, flags", "ADDC", True),
+    _i("sub", 50, "ALU3", 4, _G_ALU, "rD ← rN − src", "SUB"),
+    _i("subs", 52, "ALU3", 4, _G_ALU, "rD ← rN − src, flags", "SUB", True),
+    _i("subc", 54, "ALU3", 4, _G_ALU, "rD ← rN − src − 1 + C", "SUBC"),
+    _i("subcs", 56, "ALU3", 4, _G_ALU, "rD ← rN − src − 1 + C, flags", "SUBC", True),
+    _i("and", 58, "ALU3", 4, _G_ALU, "rD ← rN ∧ src", "AND"),
+    _i("ands", 60, "ALU3", 4, _G_ALU, "rD ← rN ∧ src, flags", "AND", True),
+    _i("or", 62, "ALU3", 4, _G_ALU, "rD ← rN ∨ src", "OR"),
+    _i("ors", 64, "ALU3", 4, _G_ALU, "rD ← rN ∨ src, flags", "OR", True),
+    _i("eor", 66, "ALU3", 4, _G_ALU, "rD ← rN ⊕ src", "EOR"),
+    _i("eors", 68, "ALU3", 4, _G_ALU, "rD ← rN ⊕ src, flags", "EOR", True),
 
-    _i("lsl", 60, "RD_SRC8", 3, _G_SHIFT, "rD ← src << 1", "LSL"),
-    _i("lsls", 62, "RD_SRC8", 3, _G_SHIFT, "rD ← src << 1, flags", "LSL", True),
-    _i("lsr", 64, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1", "LSR"),
-    _i("lsrs", 66, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, flags", "LSR", True),
-    _i("asr", 68, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, sign kept", "ASR"),
-    _i("asrs", 70, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, sign kept, flags", "ASR", True),
-    _i("csl", 72, "RD_SRC8", 3, _G_SHIFT, "rD ← {src[6:0], C}", "CSL"),
-    _i("csls", 74, "RD_SRC8", 3, _G_SHIFT, "rD ← {src[6:0], C}, flags", "CSL", True),
-    _i("csr", 76, "RD_SRC8", 3, _G_SHIFT, "rD ← {C, src[7:1]}", "CSR"),
-    _i("csrs", 78, "RD_SRC8", 3, _G_SHIFT, "rD ← {C, src[7:1]}, flags", "CSR", True),
+    _i("lsl", 70, "RD_SRC8", 3, _G_SHIFT, "rD ← src << 1", "LSL"),
+    _i("lsls", 72, "RD_SRC8", 3, _G_SHIFT, "rD ← src << 1, flags", "LSL", True),
+    _i("lsr", 74, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1", "LSR"),
+    _i("lsrs", 76, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, flags", "LSR", True),
+    _i("asr", 78, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, sign kept", "ASR"),
+    _i("asrs", 80, "RD_SRC8", 3, _G_SHIFT, "rD ← src >> 1, sign kept, flags", "ASR", True),
+    _i("csl", 82, "RD_SRC8", 3, _G_SHIFT, "rD ← {src[6:0], C}", "CSL"),
+    _i("csls", 84, "RD_SRC8", 3, _G_SHIFT, "rD ← {src[6:0], C}, flags", "CSL", True),
+    _i("csr", 86, "RD_SRC8", 3, _G_SHIFT, "rD ← {C, src[7:1]}", "CSR"),
+    _i("csrs", 88, "RD_SRC8", 3, _G_SHIFT, "rD ← {C, src[7:1]}, flags", "CSR", True),
 
-    _i("cmn", 80, "RD_SRC8", 4, _G_FLAGS, "flags of rN + src", "ADD", True),
-    _i("addcd", 82, "RD_SRC8", 4, _G_FLAGS, "flags of rN + src + C", "ADDC", True),
-    _i("cmp", 84, "RD_SRC8", 4, _G_FLAGS, "flags of rN − src", "SUB", True),
-    _i("subcd", 86, "RD_SRC8", 4, _G_FLAGS, "flags of rN − src − 1 + C", "SUBC", True),
-    _i("andd", 88, "RD_SRC8", 4, _G_FLAGS, "flags of rN ∧ src", "AND", True),
-    _i("ord", 90, "RD_SRC8", 4, _G_FLAGS, "flags of rN ∨ src", "OR", True),
-    _i("eord", 92, "RD_SRC8", 4, _G_FLAGS, "flags of rN ⊕ src", "EOR", True),
-    _i("lsld", 94, "SRC8", 3, _G_FLAGS, "flags of src << 1", "LSL", True),
-    _i("lsrd", 96, "SRC8", 3, _G_FLAGS, "flags of src >> 1", "LSR", True),
-    _i("asrd", 98, "SRC8", 3, _G_FLAGS, "flags of src >> 1, sign kept", "ASR", True),
-    _i("csld", 100, "SRC8", 3, _G_FLAGS, "flags of {src[6:0], C}", "CSL", True),
-    _i("csrd", 102, "SRC8", 3, _G_FLAGS, "flags of {C, src[7:1]}", "CSR", True),
+    _i("cmn", 90, "RD_SRC8", 4, _G_FLAGS, "flags of rN + src", "ADD", True),
+    _i("addcd", 92, "RD_SRC8", 4, _G_FLAGS, "flags of rN + src + C", "ADDC", True),
+    _i("cmp", 94, "RD_SRC8", 4, _G_FLAGS, "flags of rN − src", "SUB", True),
+    _i("subcd", 96, "RD_SRC8", 4, _G_FLAGS, "flags of rN − src − 1 + C", "SUBC", True),
+    _i("andd", 98, "RD_SRC8", 4, _G_FLAGS, "flags of rN ∧ src", "AND", True),
+    _i("ord", 100, "RD_SRC8", 4, _G_FLAGS, "flags of rN ∨ src", "OR", True),
+    _i("eord", 102, "RD_SRC8", 4, _G_FLAGS, "flags of rN ⊕ src", "EOR", True),
+    _i("lsld", 104, "SRC8", 3, _G_FLAGS, "flags of src << 1", "LSL", True),
+    _i("lsrd", 106, "SRC8", 3, _G_FLAGS, "flags of src >> 1", "LSR", True),
+    _i("asrd", 108, "SRC8", 3, _G_FLAGS, "flags of src >> 1, sign kept", "ASR", True),
+    _i("csld", 110, "SRC8", 3, _G_FLAGS, "flags of {src[6:0], C}", "CSL", True),
+    _i("csrd", 112, "SRC8", 3, _G_FLAGS, "flags of {C, src[7:1]}", "CSR", True),
 
-    _i("br", 104, "SRC16", 3, _G_BR, "current PC ← target"),
-    _i("brl", 106, "RDA_SRC16", 5, _G_BR, "rLa ← address of next instruction; current PC ← target"),
+    _i("br", 114, "SRC16", 3, _G_BR, "current PC ← target"),
+    _i("brl", 116, "RDA_SRC16", 5, _G_BR, "rLa ← address of next instruction; current PC ← target"),
 
-    _i("ptr", 108, "RD", 2, _G_IO, "rD ← received UART byte; clears the port IRQ line"),
-    _i("ptw", 110, "RD", 2, _G_IO, "send rS on the UART (no busy flag)"),
-    _i("svc", 112, "NONE", 2, _G_IO, "supervisor call: enter interrupt mode"),
+    _i("ptr", 118, "RD", 2, _G_IO, "rD ← received UART byte; clears the port IRQ line"),
+    _i("ptw", 120, "RD", 2, _G_IO, "send rS on the UART (no busy flag)"),
+    _i("svc", 122, "NONE", 2, _G_IO, "supervisor call: enter interrupt mode"),
 )}
 
 GROUPS: tuple[str, ...] = (_G_REG, _G_MEM, _G_ALU, _G_SHIFT, _G_FLAGS, _G_BR, _G_IO)
@@ -246,6 +259,21 @@ def fit(value: int, bits: int) -> int:
     return value & ((1 << bits) - 1)
 
 
+def fit_signed(value: int, bits: int) -> int:
+    """Accept -2**(bits-1) .. 2**(bits-1) - 1 only (the 12 bit offsets)."""
+    if not -(1 << (bits - 1)) <= value < (1 << (bits - 1)):
+        raise EncodeError("offset %d does not fit in %d signed bits (%d ... %d)"
+                          % (value, bits, -(1 << (bits - 1)), (1 << (bits - 1)) - 1))
+    return value & ((1 << bits) - 1)
+
+
+def fit_imm(fmt: "Format", value: int) -> int:
+    """The immediate field of an instruction of format fmt."""
+    if fmt.imm_signed:
+        return fit_signed(value, fmt.imm_width)
+    return fit(value, fmt.imm_width)
+
+
 def encode(cond: int, opcode: int, args: tuple[int, int, int] = (0, 0, 0), imm: int = 0) -> bytes:
     """Assemble one instruction word.  ``imm`` is the raw 8 or 16 bit field."""
     word = (cond & 0xF) << COND_SHIFT | (opcode & 0x7F) << OPCODE_SHIFT
@@ -271,6 +299,10 @@ class Decoded:
             if is_src and self.imm_form:
                 if imm_text is not None:
                     out.append(imm_text)
+                elif self.ins.fmt.imm_signed:
+                    bits = self.ins.fmt.imm_width
+                    v = self.imm - (1 << bits) if self.imm >> (bits - 1) else self.imm
+                    out.append("#%d" % v)
                 else:
                     out.append("#0x%0*X" % (2 if width == 8 else 4, self.imm))
             else:
@@ -300,7 +332,7 @@ def decode(data: bytes) -> Decoded | None:
     regs = tuple(word >> ARG_SHIFTS[i] & 0xF for i in range(n_regs))
     imm = None
     if imm_form:
-        imm = word & (0xFF if fmt.src == 8 else 0xFFFF)
+        imm = word & ((1 << fmt.imm_width) - 1)
     dec = Decoded(cond, ins, imm_form, regs, imm)
     if encode(cond, opcode, tuple(regs) + (0,) * (3 - len(regs)), imm or 0) != data:
         return None
@@ -320,7 +352,8 @@ def markdown() -> str:
            "| Bits | Field |", "|---|---|",
            "| 31:28 | condition |", "| 27 | unused, 0 |", "| 26:20 | opcode; bit 20 = immediate form |",
            "| 19:16 | arg1 |", "| 15:12 | arg2 |", "| 11:8 | arg3 |",
-           "| 7:0 | imm8 |", "| 15:0 | imm16 (overlaps arg2 and arg3) |", "",
+           "| 7:0 | imm8 |", "| 15:0 | imm16 (overlaps arg2 and arg3) |",
+           "| 11:0 | off12, signed: the offset of `ldo`, `sto`, `ldi`, `sti`, `lea` (overlaps arg3) |", "",
            "Register operands fill arg1, arg2, arg3 in the order they are written. "
            "`rNa` is the pair r(N+1):rN, low byte in rN; r15a wraps to r0 as the high byte.", "",
            "## Operand formats", "", "| Format | Operands |", "|---|---|"]

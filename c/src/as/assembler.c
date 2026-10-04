@@ -309,6 +309,16 @@ out:
     return e;
 }
 
+static AsmErr *imm_range_err(const Format *f, long long value, int bits)
+{
+    if (f->imm_signed) {
+        int w = fmt_imm_width(f);
+        return asm_err("offset %lld does not fit in %d signed bits (%lld ... %lld)", value, w, -(1LL << (w - 1)),
+                       (1LL << (w - 1)) - 1);
+    }
+    return asm_err("value %lld does not fit in %d bits", value, bits);
+}
+
 static AsmErr *check_operands(Asm *a, Item *it)
 {
     const Format *f = it->ins->fmt;
@@ -334,12 +344,13 @@ static AsmErr *check_operands(Asm *a, Item *it)
                 vec_push(a->warnings, xprintf("%s: r15a has no high register, the high byte wraps to r0", it->where));
         } else if (!is_src) {
             return asm_err("operand %d of '%s' must be a register", i + 1, it->ins->mnemonic);
-        } else if (op->kind == OP_LABEL && bits != 16) {
-            return asm_err("'%s' takes an 8 bit immediate, a label reference is not allowed", it->ins->mnemonic);
+        } else if (op->kind == OP_LABEL && fmt_imm_width(f) != 16) {
+            return asm_err("'%s' takes %s, a label reference is not allowed", it->ins->mnemonic,
+                           f->imm_signed ? "a signed 12 bit offset" : "an 8 bit immediate");
         } else if (op->kind == OP_IMM) {
             long long field;
-            if (!isa_fit(op->value, bits, &field))
-                return asm_err("value %lld does not fit in %d bits", op->value, bits);
+            if (!isa_fit_imm(f, op->value, &field))
+                return imm_range_err(f, op->value, bits);
         }
     }
     return nullptr;
@@ -547,8 +558,8 @@ static AsmErr *encode_instr(Asm *a, const Item *it, uint8_t out[4])
             args[i] = op->n;
         } else if (op->kind == OP_IMM) {
             opcode |= 1;
-            if (!isa_fit(op->value, ins->fmt->src, &imm))
-                return asm_err("value %lld does not fit in %d bits", op->value, ins->fmt->src);
+            if (!isa_fit_imm(ins->fmt, op->value, &imm))
+                return imm_range_err(ins->fmt, op->value, ins->fmt->src);
         } else if (is_src) {
             opcode |= 1;
             AsmErr *e = add_reloc(a, it, it->offset, R_IMM16, op, &imm);

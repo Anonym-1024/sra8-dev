@@ -270,6 +270,7 @@ One 32-bit word, big-endian in memory (byte 0 = bits 31:24):
 │ cond  │0 │  opcode  │  arg1  │  arg2  │  arg3  │   imm0   │
 └───────┴──┴──────────┴────────┴────────┴────────┴──────────┘
                                 └──── imm16 = imm1:imm0 ────┘   (imm1 = bits 15:8, imm0 = bits 7:0)
+                                         └──── off12 ───────┘   (bits 11:0, signed: ldo, sto, ldi, sti, lea)
 ```
 
 - `cond` (4) — condition, see 2.5. `0` = always.
@@ -280,6 +281,8 @@ One 32-bit word, big-endian in memory (byte 0 = bits 31:24):
 - `imm0` (8) — 8-bit immediate. `imm16` occupies bits 15:0 and therefore
   **overlaps `arg2` and `arg3`**; an instruction with a 16-bit immediate has
   at most one register operand (`arg1`).
+- `off12` (12) — the signed offset of `ldo`, `sto`, `ldi`, `sti`, `lea`,
+  −2048 … 2047, sign-extended to 16 bits. It overlaps `arg3`.
 
 Note that within the big-endian word, `imm16` sits in bytes 2 (high) and 3
 (low), i.e. it appears **big-endian in memory** although all data the program
@@ -299,12 +302,14 @@ immediate operand sets `opcode[0]`):
 | `RD_SRC16` | `rD, rSa` / `rD, #imm16` | rD | rSa | | imm16 |
 | `RDA_SRC16` | `rDa, rSa` / `rDa, #imm16` | rDa | rSa | | imm16 |
 | `ALU3` | `rD, rN, rM` / `rD, rN, #imm8` | rD | rN | rM | imm0 |
+| `RD_RA_OFF12` | `rD, rBa, rOa` / `rD, rBa, #off12` | rD | rBa | rOa | off12 |
+| `RDA_RA_OFF12` | `rDa, rBa, rOa` / `rDa, rBa, #off12` | rDa | rBa | rOa | off12 |
 
 Register operands always fill `arg1, arg2, arg3` in the order written.
 Unused fields are 0.
 
 **Undefined opcodes** (odd opcodes of instructions without an immediate form:
-7, 11, 15, 19, 23, 27, 109, 111, 113; and 114…127) have all-zero microcode
+7, 11, 15, 19, 23, 27, 119, 121, 123; and 124…127) have all-zero microcode
 and never reset the microstep counter. The sequencer then runs into
 neighbouring opcodes' microcode: **behaviour is undefined and destructive**.
 The assembler must never emit them; the disassembler shows them as raw data.
@@ -405,18 +410,29 @@ body excluding fetch and including the final reset step (for timing, 2.11).
 |---|---|---|---|---|---|---|
 | `ldr` | `rD, rSa/#imm16` | RD_SRC16 | 28 | 29 | 6 | rD ← mem[xlat(addr)] |
 | `str` | `rS, rDa/#imm16` | RD_SRC16 | 30 | 31 | 6 | mem[xlat(addr)] ← rS. **Source register first**, address second. |
+| `ldo` | `rD, rBa, rOa/#off12` | RD_RA_OFF12 | 32 | 33 | 8 | rD ← mem[xlat(rBa + offset)] |
+| `sto` | `rS, rBa, rOa/#off12` | RD_RA_OFF12 | 34 | 35 | 8 | mem[xlat(rBa + offset)] ← rS |
+| `ldi` | `rD, rBa, rOa/#off12` | RD_RA_OFF12 | 36 | 37 | 10 | rD ← mem[xlat(rBa)], then rBa ← rBa + offset |
+| `sti` | `rS, rBa, rOa/#off12` | RD_RA_OFF12 | 38 | 39 | 10 | mem[xlat(rBa)] ← rS, then rBa ← rBa + offset |
+| `lea` | `rDa, rBa, rOa/#off12` | RDA_RA_OFF12 | 40 | 41 | 7 | rDa ← rBa + offset (no memory access) |
+
+The offset is the signed 12-bit immediate or the 16-bit pair `rOa`; sums
+wrap modulo 2¹⁶. The address is formed before translation (`xlat`), in MAR,
+by MAR's own adder: **no flags change**. With `ldi` / `sti` a negative
+offset walks downwards (`sti r0, r14a, #-1` pushes a byte). `ldi` into its
+own base pair keeps the new base (the write-back comes last).
 
 #### Arithmetic and logic, three operands: `rD ← rN op (rM | imm8)`
 
 | Mnemonic | R | I | Mnemonic (sets flags) | R | I | Steps | ALU |
 |---|---|---|---|---|---|---|---|
-| `add` | 32 | 33 | `adds` | 34 | 35 | 4 | ADD |
-| `addc` | 36 | 37 | `addcs` | 38 | 39 | 4 | ADDC |
-| `sub` | 40 | 41 | `subs` | 42 | 43 | 4 | SUB |
-| `subc` | 44 | 45 | `subcs` | 46 | 47 | 4 | SUBC |
-| `and` | 48 | 49 | `ands` | 50 | 51 | 4 | AND |
-| `or` | 52 | 53 | `ors` | 54 | 55 | 4 | OR |
-| `eor` | 56 | 57 | `eors` | 58 | 59 | 4 | EOR |
+| `add` | 42 | 43 | `adds` | 44 | 45 | 4 | ADD |
+| `addc` | 46 | 47 | `addcs` | 48 | 49 | 4 | ADDC |
+| `sub` | 50 | 51 | `subs` | 52 | 53 | 4 | SUB |
+| `subc` | 54 | 55 | `subcs` | 56 | 57 | 4 | SUBC |
+| `and` | 58 | 59 | `ands` | 60 | 61 | 4 | AND |
+| `or` | 62 | 63 | `ors` | 64 | 65 | 4 | OR |
+| `eor` | 66 | 67 | `eors` | 68 | 69 | 4 | EOR |
 
 Format `ALU3`. The immediate replaces `rM` (the second ALU operand), so
 `sub r1, r2, #5` is r2 − 5; there is no reverse-subtract.
@@ -425,11 +441,11 @@ Format `ALU3`. The immediate replaces `rM` (the second ALU operand), so
 
 | Mnemonic | R | I | Sets flags | R | I | Steps | ALU |
 |---|---|---|---|---|---|---|---|
-| `lsl` | 60 | 61 | `lsls` | 62 | 63 | 3 | LSL |
-| `lsr` | 64 | 65 | `lsrs` | 66 | 67 | 3 | LSR |
-| `asr` | 68 | 69 | `asrs` | 70 | 71 | 3 | ASR |
-| `csl` | 72 | 73 | `csls` | 74 | 75 | 3 | CSL |
-| `csr` | 76 | 77 | `csrs` | 78 | 79 | 3 | CSR |
+| `lsl` | 70 | 71 | `lsls` | 72 | 73 | 3 | LSL |
+| `lsr` | 74 | 75 | `lsrs` | 76 | 77 | 3 | LSR |
+| `asr` | 78 | 79 | `asrs` | 80 | 81 | 3 | ASR |
+| `csl` | 82 | 83 | `csls` | 84 | 85 | 3 | CSL |
+| `csr` | 86 | 87 | `csrs` | 88 | 89 | 3 | CSR |
 
 Format `RD_SRC8`. The immediate form shifts the *immediate* and puts the
 result in `rD` (rarely useful; legal).
@@ -438,18 +454,18 @@ result in `rD` (rarely useful; legal).
 
 | Mnemonic | Operands | Format | R | I | Steps | ALU | Meaning |
 |---|---|---|---|---|---|---|---|
-| `cmn` | `rN, rM/#imm8` | RD_SRC8 | 80 | 81 | 4 | ADD | compare negative |
-| `addcd` | `rN, rM/#imm8` | RD_SRC8 | 82 | 83 | 4 | ADDC | |
-| `cmp` | `rN, rM/#imm8` | RD_SRC8 | 84 | 85 | 4 | SUB | compare: flags of rN − rM |
-| `subcd` | `rN, rM/#imm8` | RD_SRC8 | 86 | 87 | 4 | SUBC | |
-| `andd` | `rN, rM/#imm8` | RD_SRC8 | 88 | 89 | 4 | AND | bit test |
-| `ord` | `rN, rM/#imm8` | RD_SRC8 | 90 | 91 | 4 | OR | |
-| `eord` | `rN, rM/#imm8` | RD_SRC8 | 92 | 93 | 4 | EOR | |
-| `lsld` | `rN/#imm8` | SRC8 | 94 | 95 | 3 | LSL | |
-| `lsrd` | `rN/#imm8` | SRC8 | 96 | 97 | 3 | LSR | |
-| `asrd` | `rN/#imm8` | SRC8 | 98 | 99 | 3 | ASR | |
-| `csld` | `rN/#imm8` | SRC8 | 100 | 101 | 3 | CSL | |
-| `csrd` | `rN/#imm8` | SRC8 | 102 | 103 | 3 | CSR | |
+| `cmn` | `rN, rM/#imm8` | RD_SRC8 | 90 | 91 | 4 | ADD | compare negative |
+| `addcd` | `rN, rM/#imm8` | RD_SRC8 | 92 | 93 | 4 | ADDC | |
+| `cmp` | `rN, rM/#imm8` | RD_SRC8 | 94 | 95 | 4 | SUB | compare: flags of rN − rM |
+| `subcd` | `rN, rM/#imm8` | RD_SRC8 | 96 | 97 | 4 | SUBC | |
+| `andd` | `rN, rM/#imm8` | RD_SRC8 | 98 | 99 | 4 | AND | bit test |
+| `ord` | `rN, rM/#imm8` | RD_SRC8 | 100 | 101 | 4 | OR | |
+| `eord` | `rN, rM/#imm8` | RD_SRC8 | 102 | 103 | 4 | EOR | |
+| `lsld` | `rN/#imm8` | SRC8 | 104 | 105 | 3 | LSL | |
+| `lsrd` | `rN/#imm8` | SRC8 | 106 | 107 | 3 | LSR | |
+| `asrd` | `rN/#imm8` | SRC8 | 108 | 109 | 3 | ASR | |
+| `csld` | `rN/#imm8` | SRC8 | 110 | 111 | 3 | CSL | |
+| `csrd` | `rN/#imm8` | SRC8 | 112 | 113 | 3 | CSR | |
 
 For these, `rN` is in `arg1` and `rM` in `arg2` (unlike the 3-operand forms).
 
@@ -457,8 +473,8 @@ For these, `rN` is in `arg1` and `rM` in `arg2` (unlike the 3-operand forms).
 
 | Mnemonic | Operands | Format | R | I | Steps | Semantics |
 |---|---|---|---|---|---|---|
-| `br` | `rTa/#imm16` | SRC16 | 104 | 105 | 3 | current PC ← target (absolute) |
-| `brl` | `rLa, rTa/#imm16` | RDA_SRC16 | 106 | 107 | 5 | rLa ← address of next instruction; current PC ← target |
+| `br` | `rTa/#imm16` | SRC16 | 114 | 115 | 3 | current PC ← target (absolute) |
+| `brl` | `rLa, rTa/#imm16` | RDA_SRC16 | 116 | 117 | 5 | rLa ← address of next instruction; current PC ← target |
 
 There are no relative branches: every branch target is a 16-bit absolute
 address, hence every branch needs a relocation. Return from a subroutine is
@@ -468,9 +484,9 @@ address, hence every branch needs a relocation. Return from a subroutine is
 
 | Mnemonic | Operands | Format | R | I | Steps | Semantics |
 |---|---|---|---|---|---|---|
-| `ptr` | `rD` | RD | 108 | — | 2 | rD ← last received UART byte; **clears the port IRQ line** (not the INTR latch) |
-| `ptw` | `rS` | RD | 110 | — | 2 | start transmitting rS. **No busy flag**: a second `ptw` within one byte time (10 bit periods) is silently dropped by `UartTx`. |
-| `svc` | — | NONE | 112 | — | 2 | raise supervisor call → interrupt mode before the next instruction |
+| `ptr` | `rD` | RD | 118 | — | 2 | rD ← last received UART byte; **clears the port IRQ line** (not the INTR latch) |
+| `ptw` | `rS` | RD | 120 | — | 2 | start transmitting rS. **No busy flag**: a second `ptw` within one byte time (10 bit periods) is silently dropped by `UartTx`. |
+| `svc` | — | NONE | 122 | — | 2 | raise supervisor call → interrupt mode before the next instruction |
 
 There is **no `nop`, `halt`, `ret`, `push`, `pop`, `call`, `jmp`**, and the
 assembler has no pseudo-instructions either. The idioms are: no-op
@@ -483,20 +499,20 @@ assembler has no pseudo-instructions either. The idioms are: no-op
 |---|---|
 | `intpcw =enter_program` (0x00A4) | `00 D0 00 A4` |
 | `mova r2a, =msg_banner` (0x0100) | `00 32 01 00` |
-| `brl r12a, =puts` (0x00E4) | `06 BC 00 E4` |
-| `br.ne .b =wait_mark` (0x0010) | `96 90 00 10` |
-| `add.ne r9, r9, #1` | `92 19 90 01` |
-| `ors r1, r6, r7` | `03 61 67 00` |
+| `brl r12a, =puts` (0x00E4) | `07 5C 00 E4` |
+| `br.ne .b =wait_mark` (0x0010) | `97 30 00 10` |
+| `add.ne r9, r9, #1` | `92 B9 90 01` |
+| `ors r1, r6, r7` | `04 01 67 00` |
 | `str r0, r2a` | `01 E0 20 00` |
 | `ldr r0, r2a` | `01 C0 20 00` |
-| `br r10a` | `06 8A 00 00` |
-| `svc` | `07 00 00 00` |
-| `cmp r0, #0xA5` | `05 50 00 A5` |
-| `ptr r0` / `ptw r0` | `06 C0 00 00` / `06 E0 00 00` |
+| `br r10a` | `07 2A 00 00` |
+| `svc` | `07 A0 00 00` |
+| `cmp r0, #0xA5` | `05 F0 00 A5` |
+| `ptr r0` / `ptw r0` | `07 60 00 00` / `07 80 00 00` |
 | `intrr r1` | `01 A1 00 00` |
 | `psrw #0x40` | `01 10 00 40` |
-| `sub.su r7, r7, #1` | `42 97 70 01` |
-| `andd r1, #0x10` | `05 91 00 10` |
+| `sub.su r7, r7, #1` | `43 37 70 01` |
+| `andd r1, #0x10` | `06 31 00 10` |
 
 ### 2.8 Interrupts, SVC and privilege
 

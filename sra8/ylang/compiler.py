@@ -1,9 +1,12 @@
-"""Type checker and code generator of ylangc 0.1.
+"""Type checker and code generator of ylangc 0.3.
 
 Deliberately simple (docs/ylangc.md):
 
-* Every variable lives in memory: globals at their label, locals and
-  parameters in the stack frame.  Nothing is kept in a register across
+* A function has a static frame, `name.frame`, in .bss, unless it is
+  @recursive: then its frame is on the stack.  Static frame bytes are reached
+  with `ldr r0, =f.frame+k`, stack frame bytes with `ldo r0, r14a, #k`; both
+  are one instruction.
+* Every variable lives in memory.  Nothing is kept in a register across
   statements.
 * While an expression is computed, intermediate values ("temps") stay in
   r0 ... r9.  When those run out, the oldest temp is written to a spill
@@ -11,13 +14,12 @@ Deliberately simple (docs/ylangc.md):
 * Before every call and every branch inside an expression, all temps are
   written to their spill slots, so every label is reached with nothing in
   registers.
-* r10a is the address register, r12a the link register, r14a the stack
-  pointer.
 
-ABI 0.1 (docs/ylangc.md): the stack grows down, SP points at the next free
-byte.  The caller reserves room for the result and the arguments below
-its frame, writes the arguments, calls with `brl r12a`, reads the result
-and frees the room.  Every register may be changed by a call.
+ABI 0.3 (docs/ylangc.md): arguments of a non-recursive function go into its
+static frame; arguments of a @recursive function go onto the stack below
+SP.  Every function starts with a header that tells calls through a
+pointer which of the two it is.  Every register may be changed by a call.
+Whether a non-recursive function is re-entered is not checked.
 """
 
 from __future__ import annotations
@@ -25,9 +27,8 @@ from __future__ import annotations
 from .ast import Node
 from .errors import YError
 from . import prelude
-from .types import (BOOL, COND, INT16, NULL, OPAQUE, UINT8, UINT16, ArrayT, BoolT, CondT, FnT, IntT,
-                    ManyT, NamedT, NullT, OpaqueT, PtrT, StructT, Type, BUILTIN_TYPES, implicit,
-                    is_aggregate, is_int, is_ptr, same)
+from .types import (BOOL, COND, INT16, NULL, UINT8, UINT16, ArrayT, BoolT, FnT, IntT, ManyT, NamedT,
+                    NullT, PtrT, StructT, Type, BUILTIN_TYPES, implicit, is_aggregate, is_int, is_ptr, same)
 
 
 class VoidT(Type):
@@ -53,71 +54,93 @@ class Sym:
         self.internal = False
         self.declared = False         # by decl
         self.used = False
-        self.loc = None               # GlobalLoc or FrameLoc for variables
+        self.loc = None               # GlobalLoc of a variable
         self.helper = False
+        self.recursive = False        # functions: @recursive
+        self.called = False           # functions: called directly (its frame is used)
 
 
 # ---------------------------------------------------------------------------------------------
 # locations and temps (code generation)
 # ---------------------------------------------------------------------------------------------
 
-class Slot:
-    """Bytes of the frame.  kind: 'local' (base fixed at the end), 'lr',
-    or 'caller' (the caller's result and argument area, at frame size + off)."""
-
-    def __init__(self, size: int, kind: str = "local", off: int = 0) -> None:
-        self.size, self.kind, self.off = size, kind, off
-        self.base = 0
-
-
 class GlobalLoc:
-    def __init__(self, label: str, off: int = 0) -> None:
-        self.label, self.off = label, off
+    """Memory at a label: a global variable, a string, or a byte of a frame."""
 
-    def plus(self, n: int) -> "GlobalLoc":
-        return GlobalLoc(self.label, self.off + n)
+    def __init__(self, label: str, off: int = 0, desc: str = "") -> None:
+        self.label, self.off, self.desc = label, off, desc or label
+
+    def plus(self, n: int, desc: str | None = None) -> "GlobalLoc":
+        return GlobalLoc(self.label, self.off + n, desc or ("%s+%d" % (self.desc, n) if n else self.desc))
+
+    def operand(self, k: int = 0) -> str:
+        off = self.off + k
+        return "=%s%s" % (self.label, "+%d" % off if off else "")
 
 
-class FrameLoc:
-    def __init__(self, slot: Slot, off: int = 0) -> None:
-        self.slot, self.off = slot, off
+class Slot:
+    """Part of the stack frame of a @recursive function.  kind: 'local'
+    (offset fixed when allocated), 'lr' (the saved r12a, above the locals) or
+    'caller' (the caller's result and argument area, above the frame)."""
 
-    def plus(self, n: int) -> "FrameLoc":
-        return FrameLoc(self.slot, self.off + n)
+    def __init__(self, size: int, kind: str, off: int, desc: str) -> None:
+        self.size, self.kind, self.off, self.desc = size, kind, off, desc
+
+
+class StackLoc:
+    """Bytes of the stack frame of a @recursive function."""
+
+    def __init__(self, slot: Slot, off: int = 0, desc: str = "") -> None:
+        self.slot, self.off, self.desc = slot, off, desc or slot.desc
+
+    def plus(self, n: int, desc: str | None = None) -> "StackLoc":
+        return StackLoc(self.slot, self.off + n, desc or ("%s+%d" % (self.desc, n) if n else self.desc))
 
 
 class SpLoc:
-    """The outgoing area of a call: byte `off` above SP as it was when
-    the stack depth was `delta`."""
+    """The argument area of a call to a @recursive function: byte off above
+    SP as it was when the stack depth of the caller was delta."""
 
-    def __init__(self, off: int, delta: int) -> None:
-        self.off, self.delta = off, delta
+    def __init__(self, off: int, delta: int, desc: str = "") -> None:
+        self.off, self.delta, self.desc = off, delta, desc
 
-    def plus(self, n: int) -> "SpLoc":
-        return SpLoc(self.off + n, self.delta)
+    def plus(self, n: int, desc: str | None = None) -> "SpLoc":
+        return SpLoc(self.off + n, self.delta, desc or ("%s+%d" % (self.desc, n) if n else self.desc))
+
+
+def fits12(v: int) -> bool:
+    return -2048 <= v <= 2047
 
 
 class PtrLoc:
     """Memory at the address held by a temp, plus off."""
 
-    def __init__(self, temp: "Temp", off: int = 0) -> None:
-        self.temp, self.off = temp, off
+    def __init__(self, temp: "Temp", off: int = 0, desc: str = "") -> None:
+        self.temp, self.off, self.desc = temp, off, desc or "[%s]" % temp.desc
 
-    def plus(self, n: int) -> "PtrLoc":
-        return PtrLoc(self.temp, self.off + n)
+    def plus(self, n: int, desc: str | None = None) -> "PtrLoc":
+        return PtrLoc(self.temp, self.off + n, desc or ("%s+%d" % (self.desc, n) if n else self.desc))
 
 
 class Temp:
-    def __init__(self, size: int) -> None:
+    def __init__(self, size: int, desc: str = "") -> None:
         self.size = size
+        self.desc = desc
         self.regs: list[int] | None = None
-        self.slot: Slot | None = None
+        self.slot: GlobalLoc | None = None
         self.pinned = 0
         self.dead = False
 
     def r(self, k: int) -> str:
         assert self.regs is not None, "temp not in registers"
         return "r%d" % self.regs[k]
+
+    def regs_text(self) -> str:
+        return ":".join("r%d" % r for r in reversed(self.regs or []))
+
+
+def byte_desc(desc: str, k: int, size: int) -> str:
+    return desc if size == 1 else "%s (byte %d)" % (desc, k)
 
 
 def lo(v: int) -> int:
@@ -148,6 +171,7 @@ class Module:
         self.main: Sym | None = None
         self.helpers_used: set[str] = set()
         self.fn: FuncGen | None = None
+        self.frames: list[tuple[str, int, bool]] = []               # (label, size, exported)
 
     # -- names --------------------------------------------------------------------------------
 
@@ -650,7 +674,10 @@ class Module:
             t = self.resolve(d.type)
             sym = Sym("func" if isinstance(t.resolved(), FnT) else "var", d.name, t, d.where)
             if sym.kind == "var":
+                if d.recursive:
+                    raise YError("@recursive applies to functions only", d.where)
                 sym.loc = GlobalLoc(d.name)
+            sym.recursive = d.recursive
         sym.declared = True
         self.scopes[0][d.name] = sym
 
@@ -672,32 +699,37 @@ class Module:
             t.name = d.name
         old.defined = True
 
-    def define(self, kind: str, name: str, ty: Type, where: tuple[str, int], internal: bool) -> Sym:
+    def define(self, kind: str, name: str, ty: Type, where: tuple[str, int], internal: bool,
+               recursive: bool = False) -> Sym:
         old = self.find(name)
         if old is not None:
             if not old.declared or old.defined or old.kind != kind:
                 raise YError("'%s' is already declared (at %s:%d)" % (name, old.where[0], old.where[1]), where)
             if not same(old.ty, ty):
                 raise YError("'%s' is defined as %s but declared as %s" % (name, ty, old.ty), where)
+            if old.recursive != recursive:
+                raise YError("'%s' is %s@recursive here but %s in its decl" % (
+                    name, "" if recursive else "not ", "is" if old.recursive else "is not"), where)
             sym = old
         else:
             sym = Sym(kind, name, ty, where)
             self.scopes[0][name] = sym
         sym.defined = True
         sym.internal = internal
+        sym.recursive = recursive
         return sym
 
     def top_impl(self, d: Node, helper: bool = False) -> None:
         params = [self.resolve(t) for _, t, _ in d.params]
         ret = self.resolve(d.ret) if d.ret else None
         fnty = FnT(params, ret, [n for n, _, _ in d.params])
-        sym = self.define("func", d.name, fnty, d.where, d.internal)
+        sym = self.define("func", d.name, fnty, d.where, d.internal, d.recursive)
         sym.helper = helper
         if d.main:
             if self.main is not None:
                 raise YError("only one @main per file", d.where)
             if params or ret is not None:
-                raise YError("the @main function takes no parameters and returns nothing (ABI 0.1)", d.where)
+                raise YError("the @main function takes no parameters and returns nothing", d.where)
             self.main = sym
         for p in params + ([ret] if ret else []):
             if not p.resolved().complete:
@@ -707,6 +739,8 @@ class Module:
         lines = gen.run()
         self.fn = None
         self.code_sections.append((d.section, lines))
+        if not sym.recursive:
+            self.frames.append((gen.frame, gen.size, not d.internal, gen.layout_text()))
 
     def top_var(self, d: Node) -> None:
         infer = None
@@ -812,16 +846,26 @@ class Module:
         name = prelude.helper_name(op, t.bits, t.signed)
         self.helpers_used.add(name)
         sym = Sym("func", name, FnT([t, t], t), ("<ylangc helpers>", 0))
+        sym.helper = True
         return sym
 
     # -- output --------------------------------------------------------------------------------------
 
     def output(self) -> str:
         g = self.scopes[0]
-        imports = sorted(s.name for s in g.values()
-                         if s.kind in ("var", "func") and s.declared and not s.defined and s.used)
-        exports = [s.name for s in g.values() if s.kind in ("var", "func") and s.defined and not s.internal]
-        out = ["; generated by ylangc 0.1", ""]
+        imports = []
+        for sym in sorted(g.values(), key=lambda x: x.name):
+            if sym.kind in ("var", "func") and sym.declared and not sym.defined and sym.used:
+                imports.append(sym.name)
+                if sym.kind == "func" and sym.called and not sym.recursive:
+                    imports.append(sym.name + ".frame")
+        exports = []
+        for sym in g.values():
+            if sym.kind in ("var", "func") and sym.defined and not sym.internal:
+                exports.append(sym.name)
+                if sym.kind == "func" and not sym.recursive:
+                    exports.append(sym.name + ".frame")
+        out = ["; generated by ylangc 0.3 (ABI 0.3, docs/ylangc.md)", ""]
         if self.main is not None:
             imports.append("__stack_top")
         for name in imports:
@@ -829,12 +873,12 @@ class Module:
         for name in exports:
             out.append("        .export %s" % name)
         if self.main is not None:
-            out += ["", "; start-up: the stack pointer, then the @main function (ABI 0.1)",
+            out += ["", "; start-up code at address 0: set the stack pointer, run the @main function, stop",
                     "        .code vector", "        .export _start",
-                    "_start: mova    r14a, =__stack_top",
-                    "        brl     r12a, =%s" % self.main.name,
+                    "_start: mova    r14a, =__stack_top     ; SP = the last byte of RAM; the stack grows down",
+                    "        brl     r12a, =%-18s ; call %s" % (self.main.name, self.main.name),
                     ".l spin:",
-                    "        br      .b =spin"]
+                    "        br      .b =spin               ; %s returned: stop here" % self.main.name]
         for section, lines in self.code_sections:
             out.append("")
             out.append("        .code %s" % section if section else "        .code")
@@ -845,9 +889,14 @@ class Module:
             for label, data in self.strings:
                 out.append("%s:" % label)
                 out.extend(data_lines(data + [0]))
-        if self.bss:
+        if self.bss or self.frames:
             out += ["", "        .bss"]
             out.extend(self.bss)
+            for label, size, _, layout in self.frames:
+                out.append("")
+                out.extend(layout)
+                out.append("%s:" % label)
+                out.append("        .res %d" % size)
         return "\n".join(out) + "\n"
 
 
@@ -957,65 +1006,132 @@ def fold_shift(op: str, a: int, n: int, t: IntT) -> int:
 # code generation of one function
 # ---------------------------------------------------------------------------------------------
 
+def show(e: Node, limit: int = 40) -> str:
+    """A short source-like text of an expression, for comments."""
+    text = _show(e)
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def _show(e: Node) -> str:
+    k = e.kind
+    if k == "int":
+        return str(e.value)
+    if k in ("true", "false", "nullptr"):
+        return k
+    if k == "name":
+        return e.name
+    if k == "str":
+        return '"%s"' % "".join(chr(c) if 32 <= c < 127 else "." for c in e.data)
+    if k == "sstr":
+        return 's"%s"' % "".join(chr(c) if 32 <= c < 127 else "." for c in e.data)
+    if k == "unary":
+        return "%s%s%s" % (e.op, " " if e.op == "not" else "", _paren(e.operand))
+    if k == "binary":
+        return "%s %s %s" % (_paren(e.left), e.op, _paren(e.right))
+    if k == "call":
+        return "%s(%s)" % (_show(e.func), ", ".join(_show(a) for a in e.args))
+    if k == "index":
+        return "%s[%s]" % (_paren(e.obj), _show(e.index))
+    if k == "field":
+        return "%s.%s" % (_paren(e.obj), e.name)
+    if k == "deref":
+        return "[%s]" % _show(e.ptr)
+    if k == "ptr":
+        return "@ptr(%s)" % _show(e.operand)
+    if k == "boolof":
+        return "@bool(%s)" % _show(e.operand)
+    if k == "sizeof":
+        return "@sizeof(...)"
+    if k in ("as", "cast"):
+        return "@%s(%s)%s" % (k, e.ty, _paren(e.operand))
+    if k == "init":
+        return "{...}"
+    return k
+
+
+def _paren(e: Node) -> str:
+    return "(%s)" % _show(e) if e.kind == "binary" else _show(e)
+
+
 class FuncGen:
+    """Code of one function, with its static frame `name.frame`."""
+
     def __init__(self, module: Module, d: Node, sym: Sym, fnty: FnT) -> None:
         self.m = module
         self.d = d
         self.sym = sym
         self.fnty = fnty
-        self.code: list = []
+        self.frame = sym.name + ".frame"
+        self.size = 0                        # bytes of the frame so far
+        self.layout: list[tuple[int, int, str]] = []
+        self.code: list[str] = []
         self.free = set(REGS)
         self.live: list[Temp] = []           # temps in registers, oldest first
-        self.slots: list[Slot] = []
-        self.pool: dict[int, list[Slot]] = {}
-        self.sp_delta = 0
+        self.pool: dict[int, list[GlobalLoc]] = {}
         self.nlabel = 0
+        self.ntemp = 0
         self.loops: list[tuple[str | None, str, str]] = []
-        self.lr_slot = Slot(2, "lr")
+        self.recursive = sym.recursive
+        self.sp_delta = 0                    # bytes pushed below the frame (calls of @recursive functions)
         self.ret_label = self.label()
         R = fnty.ret.resolved().size if fnty.ret else 0
-        self.ret_slot = Slot(R, "caller", 0) if R else None
-        self.param_slots = []
-        off = R
-        for t in fnty.params:
-            self.param_slots.append(Slot(t.resolved().size, "caller", off))
-            off += t.resolved().size
+        if self.recursive:
+            self.ret_loc = StackLoc(Slot(R, "caller", 0, "result")) if R else None
+            self.param_locs = []
+            off = R
+            for (name, _, _), t in zip(d.params, fnty.params):
+                size = t.resolved().size
+                self.param_locs.append(StackLoc(Slot(size, "caller", off, name)))
+                off += size
+            self.caller_area = off
+            self.lr_loc = StackLoc(Slot(2, "lr", 0, "saved return address (r12a)"))
+        else:
+            self.ret_loc = self.slot(R, "result") if R else None
+            self.param_locs = [self.slot(t.resolved().size, name)
+                               for (name, _, _), t in zip(d.params, fnty.params)]
+            self.lr_loc = self.slot(2, "saved return address (r12a)")
 
-    # -- emission -----------------------------------------------------------------------------------
+    # -- the frame ------------------------------------------------------------------------------------
 
-    def emit(self, text: str) -> None:
-        self.code.append("        " + text)
+    def slot(self, size: int, desc: str):
+        """size bytes of this function's frame: static, or on the stack."""
+        base = self.size
+        self.size += size
+        self.layout.append((base, size, desc))
+        if self.recursive:
+            return StackLoc(Slot(size, "local", base, desc))
+        return GlobalLoc(self.frame, base, desc)
+
+    def layout_text(self) -> list[str]:
+        if self.recursive:
+            L = self.size
+            F = L + 2
+            out = ["; stack frame of %s, %d bytes, SP + 1 ... SP + %d after the prologue:" % (self.sym.name, F, F)]
+            for base, size, desc in self.layout:
+                out.append(";   SP+%-4d %-3d %s" % (1 + base, size, desc))
+            out.append(";   SP+%-4d 2   saved return address (r12a)" % (1 + L))
+            if self.ret_loc is not None:
+                out.append(";   SP+%-4d %-3d result (the caller's area)" % (1 + F, self.ret_loc.slot.size))
+            for loc in self.param_locs:
+                out.append(";   SP+%-4d %-3d %s (the caller's area)" % (1 + F + loc.slot.off, loc.slot.size, loc.desc))
+            return out
+        out = ["; frame of %s, %d bytes (ABI 0.3: the caller writes the arguments here)" % (self.sym.name, self.size)]
+        for base, size, desc in self.layout:
+            out.append(";   +%-4d %-3d %s" % (base, size, desc))
+        return out
+
+    def emit(self, ins: str, ops: str = "", comment: str = "") -> None:
+        text = "%-7s %s" % (ins, ops) if ops else ins
+        self.code.append("        %-30s ; %s" % (text, comment) if comment else "        " + text)
 
     def label(self) -> str:
         self.nlabel += 1
         return "%s.%d" % (self.sym.name, self.nlabel)
 
-    def place(self, label: str) -> None:
-        self.code.append("%s:" % label)
+    def place(self, label: str, comment: str = "") -> None:
+        self.code.append("%s:%s" % (label, "%s; %s" % (" " * max(1, 39 - len(label)), comment) if comment else ""))
 
-    def frame_addr(self, slot: Slot, k: int) -> None:
-        """r10a <- address of byte k of the slot."""
-        self.code.append(("fa", slot, k, self.sp_delta))
-
-    def sp_addr(self, off: int) -> None:
-        """r10a <- SP + off."""
-        self.emit("adds    r10, r14, #%d" % lo(off))
-        self.emit("addc    r11, r15, #%d" % hi(off))
-
-    def sp_sub(self, n: int) -> None:
-        self.emit("subs    r14, r14, #%d" % lo(n))
-        self.emit("subc    r15, r15, #%d" % hi(n))
-
-    def sp_add(self, n: int) -> None:
-        self.emit("adds    r14, r14, #%d" % lo(n))
-        self.emit("addc    r15, r15, #%d" % hi(n))
-
-    # -- temps ----------------------------------------------------------------------------------------
-
-    def new_slot(self, size: int) -> Slot:
-        s = Slot(size)
-        self.slots.append(s)
-        return s
+    # -- temps ----------------------------------------------------------------------------------------------
 
     def alloc(self, size: int) -> list[int]:
         while len(self.free) < size:
@@ -1028,8 +1144,8 @@ class FuncGen:
             self.free.discard(r)
         return regs
 
-    def temp(self, size: int) -> Temp:
-        t = Temp(size)
+    def temp(self, size: int, desc: str) -> Temp:
+        t = Temp(size, desc)
         t.regs = self.alloc(size)
         self.live.append(t)
         return t
@@ -1038,26 +1154,19 @@ class FuncGen:
         if t.regs is None:
             return
         if t.slot is None:
-            t.slot = self.slot_for(t.size)
+            pool = self.pool.get(t.size)
+            t.slot = pool.pop() if pool else self.slot(t.size, "spill slot")
         for k in range(t.size):
-            self.frame_addr(t.slot, k)
-            self.emit("str     %s, r10a" % t.r(k))
+            self.byte_op("str", t.r(k), t.slot, k, "spill %s" % byte_desc(t.desc, k, t.size))
         self.free.update(t.regs)
         t.regs = None
         self.live.remove(t)
-
-    def slot_for(self, size: int) -> Slot:
-        pool = self.pool.get(size)
-        if pool:
-            return pool.pop()
-        return self.new_slot(size)
 
     def ensure(self, t: Temp) -> Temp:
         if t.regs is None:
             regs = self.alloc(t.size)
             for k, r in enumerate(regs):
-                self.frame_addr(t.slot, k)
-                self.emit("ldr     r%d, r10a" % r)
+                self.byte_op("ldr", "r%d" % r, t.slot, k, "reload %s" % byte_desc(t.desc, k, t.size))
             t.regs = regs
             self.live.append(t)
         return t
@@ -1085,17 +1194,27 @@ class FuncGen:
         for t in list(self.live):
             self.spill(t)
 
+    def forget_reloads(self) -> None:
+        """Like spill_all, after code that only reloaded temps from their
+        slots (writing the arguments of a call): a temp with a slot still
+        holds its value there, so its registers are just dropped."""
+        for t in list(self.live):
+            if t.slot is None:
+                self.spill(t)
+            else:
+                self.free.update(t.regs)
+                t.regs = None
+                self.live.remove(t)
+
     def resize(self, t: Temp, size: int) -> None:
-        """Drop high bytes (size < t.size); the caller extends otherwise."""
-        assert t.regs is not None
+        """Drop the high bytes of t (size < t.size)."""
         for r in t.regs[size:]:
             self.free.add(r)
         t.regs = t.regs[:size]
         t.size = size
-        t.slot = None                      # the old slot has the wrong size; a new one when spilled
+        t.slot = None                      # the old slot has the wrong size
 
     def extend(self, t: Temp, size: int, signed: bool) -> None:
-        assert t.regs is not None
         if size <= t.size:
             return
         self.pin(t)
@@ -1103,55 +1222,65 @@ class FuncGen:
         self.unpin(t)
         top = t.r(t.size - 1)
         if signed:
-            self.emit("mov     r%d, #0" % extra[0])
-            self.emit("andd    %s, #128" % top)
-            self.emit("mov.ne  r%d, #255" % extra[0])
+            self.emit("mov", "r%d, #0" % extra[0], "sign extension of %s: 0 ..." % t.desc)
+            self.emit("andd", "%s, #128" % top, "... is the sign bit set?")
+            self.emit("mov.ne", "r%d, #255" % extra[0], "... then 0xFF")
             for r in extra[1:]:
-                self.emit("mov     r%d, r%d" % (r, extra[0]))
+                self.emit("mov", "r%d, r%d" % (r, extra[0]), "sign extension, next byte")
         else:
             for r in extra:
-                self.emit("mov     r%d, #0" % r)
+                self.emit("mov", "r%d, #0" % r, "zero extension of %s" % t.desc)
         t.regs = t.regs + extra
         t.size = size
         t.slot = None
 
-    def const(self, value: int, size: int) -> Temp:
-        t = self.temp(size)
+    def const(self, value: int, size: int, desc: str | None = None) -> Temp:
+        t = self.temp(size, desc or str(value))
         for k, b in enumerate(le_bytes(value, size)):
-            self.emit("mov     %s, #%d" % (t.r(k), b))
+            self.emit("mov", "%s, #%d" % (t.r(k), b), "%s = %s" % (t.r(k), byte_desc(t.desc, k, size)))
         return t
 
-    # -- memory access ----------------------------------------------------------------------------------
+    # -- memory --------------------------------------------------------------------------------------------
 
-    def byte_op(self, op: str, reg: str, loc, k: int) -> None:
+    def byte_op(self, op: str, reg: str, loc, k: int, comment: str) -> None:
         """ldr/str reg <-> byte k of loc.  A PtrLoc's temp must be in registers."""
         if isinstance(loc, GlobalLoc):
-            off = loc.off + k
-            self.emit("%-7s %s, =%s%s" % (op, reg, loc.label, "+%d" % off if off else ""))
-            return
-        if isinstance(loc, FrameLoc):
-            self.frame_addr(loc.slot, loc.off + k)
+            self.emit(op, "%s, %s" % (reg, loc.operand(k)), comment)
+        elif isinstance(loc, StackLoc):
+            self.code.append(("stk", "ldo" if op == "ldr" else "sto", reg, loc.slot, loc.off + k, self.sp_delta,
+                              comment))
         elif isinstance(loc, SpLoc):
-            self.sp_addr(1 + loc.off + k + self.sp_delta - loc.delta)
+            off = 1 + loc.off + k + self.sp_delta - loc.delta
+            self.emit("ldo" if op == "ldr" else "sto", "%s, r14a, #%d" % (reg, off), comment)
         else:
-            t = loc.temp
-            off = loc.off + k
-            self.emit("mov     r10, %s" % t.r(0))
-            self.emit("mov     r11, %s" % t.r(1))
-            if off:
-                self.emit("adds    r10, r10, #%d" % lo(off))
-                self.emit("addc    r11, r11, #%d" % hi(off))
-        self.emit("%-7s %s, r10a" % (op, reg))
+            base = self.ptr_setup(loc, 1, k)
+            self.emit("ldo" if op == "ldr" else "sto", "%s, r10a, #%d" % (reg, base + k), comment)
 
-    def load(self, loc, size: int) -> Temp:
+    def ptr_setup(self, loc: "PtrLoc", size: int, first: int = 0) -> int:
+        """r10a <- the address in loc's temp; returns the offset still to add
+        (the 12 bit offset of ldo / sto takes it when it fits)."""
+        t = loc.temp
+        self.emit("mov", "r10, %s" % t.r(0), "r10a = address in %s" % t.regs_text())
+        self.emit("mov", "r11, %s" % t.r(1))
+        if fits12(loc.off + first) and fits12(loc.off + first + size - 1):
+            return loc.off
+        self.emit("adds", "r10, r10, #%d" % lo(loc.off), "... + %d" % loc.off)
+        self.emit("addc", "r11, r11, #%d" % hi(loc.off))
+        return 0
+
+    def load(self, loc, size: int, desc: str | None = None) -> Temp:
         if isinstance(loc, PtrLoc):
             self.ensure(loc.temp)
             self.pin(loc.temp)
-        t = self.temp(size)
-        for k in range(size):
-            self.byte_op("ldr", t.r(k), loc, k)
-        if isinstance(loc, PtrLoc):
+            t = self.temp(size, desc or loc.desc)
+            base = self.ptr_setup(loc, size)
+            for k in range(size):
+                self.emit("ldo", "%s, r10a, #%d" % (t.r(k), base + k), "%s = %s" % (t.r(k), byte_desc(loc.desc, k, size)))
             self.unpin(loc.temp)
+            return t
+        t = self.temp(size, desc or loc.desc)
+        for k in range(size):
+            self.byte_op("ldr", t.r(k), loc, k, "%s = %s" % (t.r(k), byte_desc(loc.desc, k, size)))
         return t
 
     def store(self, loc, t: Temp) -> None:
@@ -1159,9 +1288,14 @@ class FuncGen:
         self.pin(t)
         if isinstance(loc, PtrLoc):
             self.ensure(loc.temp)
+            self.unpin(t)
+            base = self.ptr_setup(loc, t.size)
+            for k in range(t.size):
+                self.emit("sto", "%s, r10a, #%d" % (t.r(k), base + k), "%s = %s" % (byte_desc(loc.desc, k, t.size), t.r(k)))
+            return
         self.unpin(t)
         for k in range(t.size):
-            self.byte_op("str", t.r(k), loc, k)
+            self.byte_op("str", t.r(k), loc, k, "%s = %s" % (byte_desc(loc.desc, k, t.size), t.r(k)))
 
     def free_loc(self, loc) -> None:
         if isinstance(loc, PtrLoc):
@@ -1170,37 +1304,51 @@ class FuncGen:
     def addr_of(self, loc, consume: bool = True) -> Temp:
         """The address of loc as a 2-byte temp.  A PtrLoc's temp is reused
         (consumed) unless consume is False."""
-        if isinstance(loc, PtrLoc) and not consume:
-            src = self.ensure(loc.temp)
-            self.pin(src)
-            t = self.temp(2)
-            self.unpin(src)
-            self.emit("mov     %s, %s" % (t.r(0), src.r(0)))
-            self.emit("mov     %s, %s" % (t.r(1), src.r(1)))
-            if loc.off:
-                self.emit("adds    %s, %s, #%d" % (t.r(0), t.r(0), lo(loc.off)))
-                self.emit("addc    %s, %s, #%d" % (t.r(1), t.r(1), hi(loc.off)))
-            return t
+        desc = "@ptr(%s)" % loc.desc
         if isinstance(loc, PtrLoc):
-            t = self.ensure(loc.temp)
+            if consume:
+                t = self.ensure(loc.temp)
+                t.desc = desc
+            else:
+                src = self.ensure(loc.temp)
+                self.pin(src)
+                t = self.temp(2, desc)
+                self.unpin(src)
+                self.emit("mov", "%s, %s" % (t.r(0), src.r(0)), "copy the address in %s" % src.regs_text())
+                self.emit("mov", "%s, %s" % (t.r(1), src.r(1)))
             if loc.off:
-                self.emit("adds    %s, %s, #%d" % (t.r(0), t.r(0), lo(loc.off)))
-                self.emit("addc    %s, %s, #%d" % (t.r(1), t.r(1), hi(loc.off)))
+                self.emit("adds", "%s, %s, #%d" % (t.r(0), t.r(0), lo(loc.off)), "%s + %d" % (t.desc, loc.off))
+                self.emit("addc", "%s, %s, #%d" % (t.r(1), t.r(1), hi(loc.off)))
             return t
-        t = self.temp(2)
+        t = self.temp(2, desc)
         if isinstance(loc, GlobalLoc):
-            self.emit("mova    r10a, =%s%s" % (loc.label, "+%d" % loc.off if loc.off else ""))
-        elif isinstance(loc, FrameLoc):
-            self.frame_addr(loc.slot, loc.off)
+            self.emit("mova", "r10a, %s" % loc.operand(), "r10a = %s" % desc)
+        elif isinstance(loc, StackLoc):
+            self.code.append(("stk", "lea", "r10a", loc.slot, loc.off, self.sp_delta, "r10a = %s" % desc))
         else:
-            self.sp_addr(1 + loc.off + self.sp_delta - loc.delta)
-        self.emit("mov     %s, r10" % t.r(0))
-        self.emit("mov     %s, r11" % t.r(1))
+            self.emit("lea", "r10a, r14a, #%d" % (1 + loc.off + self.sp_delta - loc.delta), "r10a = %s" % desc)
+        self.emit("mov", "%s, r10" % t.r(0))
+        self.emit("mov", "%s, r11" % t.r(1))
         return t
 
+    def copy_loop(self, what: str, size: int) -> None:
+        """Copy size bytes (at least 1) from r2a to r4a, forward, one at a time,
+        with ldi / sti; the count is in r6 (r6a when size > 255)."""
+        top = self.label()
+        self.place(top, "copy loop: %s" % what)
+        self.emit("ldi", "r0, r2a, #1", "r0 = byte at source, source + 1")
+        self.emit("sti", "r0, r4a, #1", "byte at destination = r0, destination + 1")
+        if size <= 255:
+            self.emit("subs", "r6, r6, #1", "count - 1")
+        else:
+            self.emit("subs", "r6, r6, #1", "count - 1")
+            self.emit("subc", "r7, r7, #0")
+            self.emit("ord", "r6, r7", "count = 0?")
+        self.emit("br.ne", "=%s" % top, "no: next byte")
+
     def copy(self, dst, src, size: int) -> None:
-        """Copy size bytes, forward, one at a time (so an overlapping copy
-        from lower addresses repeats a pattern)."""
+        """Copy size bytes, forward (so an overlapping copy from lower
+        addresses repeats a pattern).  Neither location is consumed."""
         if size <= 0:
             return
         s = self.addr_of(src, consume=False)
@@ -1209,81 +1357,90 @@ class FuncGen:
         self.unpin(s)
         self.spill_all()
         for k, r in ((0, 2), (1, 3)):
-            self.frame_addr(s.slot, k)
-            self.emit("ldr     r%d, r10a" % r)
+            self.byte_op("ldr", "r%d" % r, s.slot, k, "r2a = source: %s" % src.desc if k == 0 else "")
         for k, r in ((0, 4), (1, 5)):
-            self.frame_addr(d.slot, k)
-            self.emit("ldr     r%d, r10a" % r)
+            self.byte_op("ldr", "r%d" % r, d.slot, k, "r4a = destination: %s" % dst.desc if k == 0 else "")
         self.release(s)
         self.release(d)
-        self.emit("mov     r6, #%d" % lo(size))
-        self.emit("mov     r7, #%d" % hi(size))
-        top = self.label()
-        self.place(top)
-        self.emit("ldr     r0, r2a")
-        self.emit("str     r0, r4a")
-        self.emit("adds    r2, r2, #1")
-        self.emit("addc    r3, r3, #0")
-        self.emit("adds    r4, r4, #1")
-        self.emit("addc    r5, r5, #0")
-        self.emit("subs    r6, r6, #1")
-        self.emit("subc    r7, r7, #0")
-        self.emit("ord     r6, r7")
-        self.emit("br.ne   =%s" % top)
-
-    # -- the function -----------------------------------------------------------------------------------
+        self.emit("mov", "r6, #%d" % lo(size), "count = %d bytes" % size)
+        if size > 255:
+            self.emit("mov", "r7, #%d" % hi(size))
+        self.copy_loop("%s = %s" % (dst.desc, src.desc), size)
 
     def run(self) -> list[str]:
         m = self.m
         m.scopes.append({})
-        for (name, _, pw), t, slot in zip(self.d.params, self.fnty.params, self.param_slots):
+        for (name, _, pw), t, loc in zip(self.d.params, self.fnty.params, self.param_locs):
             sym = Sym("var", name, t, pw)
-            sym.loc = FrameLoc(slot)
+            sym.loc = loc
             sym.defined = True
             m.declare(sym)
         self.block(self.d.body, new_scope=False)
         m.scopes.pop()
-        return self.finish()
-
-    def finish(self) -> list[str]:
-        base = 0
-        for s in self.slots:
-            s.base = base
-            base += s.size
-        L = base
-        self.lr_slot.base = L
+        name = self.sym.name
+        rec = self.recursive
+        L = self.size
         F = L + 2
-        out = ["", "; %s: %s" % (self.sym.name, self.fnty), "%s:" % self.sym.name]
 
-        def fa(slot: Slot, k: int, delta: int) -> list[str]:
-            b = slot.base if slot.kind != "caller" else F + slot.off
-            off = 1 + b + k + delta
-            return ["        adds    r10, r14, #%d" % lo(off), "        addc    r11, r15, #%d" % hi(off)]
+        def line(ins: str, ops: str, comment: str = "") -> str:
+            text = "%-7s %s" % (ins, ops)
+            return "        %-30s ; %s" % (text, comment) if comment else "        " + text
 
-        out.append("        subs    r14, r14, #%d" % lo(F))
-        out.append("        subc    r15, r15, #%d" % hi(F))
-        out += fa(self.lr_slot, 0, 0) + ["        str     r12, r10a"]
-        out += fa(self.lr_slot, 1, 0) + ["        str     r13, r10a"]
+        def stk(op: str, reg: str, slot: Slot, k: int, delta: int, comment: str) -> list[str]:
+            base = slot.off if slot.kind == "local" else (L if slot.kind == "lr" else F + slot.off)
+            off = 1 + base + k + delta
+            target = "r10a" if op == "lea" else reg
+            if fits12(off):
+                return [line(op, "%s, r14a, #%d" % (target, off), comment)]
+            out = [line("mova", "r10a, #%d" % (off & 0xFFFF), comment + " (far: SP + %d)" % off),
+                   line("lea", "r10a, r14a, r10a")]
+            if op != "lea":
+                out.append(line(op, "%s, r10a, #0" % reg))
+            return out
+
+        def sp_move(n: int, comment: str) -> list[str]:
+            if fits12(n):
+                return [line("lea", "r14a, r14a, #%d" % n, comment)]
+            return [line("mova", "r10a, #%d" % (n & 0xFFFF), comment), line("lea", "r14a, r14a, r10a")]
+
+        out = ["", "; " + "-" * 78,
+               "; %s: %s%s" % (name, self.fnty, " (@recursive: stack frame)" if rec else ""),
+               "; " + "-" * 78]
+        if rec:
+            out += self.layout_text()
+            out += [line(".addr", "0", "header: no static frame (@recursive) ..."),
+                    line(".dword", "%d" % F, "... and the size of its stack frame"),
+                    "%s:" % name]
+            out += sp_move(-F, "SP -= %d: the stack frame" % F)
+            out += stk("sto", "r12", self.lr_loc.slot, 0, 0, "save the return address")
+            out += stk("sto", "r13", self.lr_loc.slot, 1, 0, "")
+        else:
+            out += [line(".addr", "=%s" % self.frame, "header: the frame of %s ..." % name),
+                    line(".dword", "%d" % self.size, "... and its size"),
+                    "%s:" % name,
+                    line("str", "r12, %s" % self.lr_loc.operand(0), "save the return address"),
+                    line("str", "r13, %s" % self.lr_loc.operand(1))]
         for item in self.code:
             if isinstance(item, tuple):
-                _, slot, k, delta = item
-                out += fa(slot, k, delta)
+                _, op, reg, slot, k, delta, comment = item
+                out += stk(op, reg, slot, k, delta, comment)
             else:
                 out.append(item)
-        out.append("%s:" % self.ret_label)
-        out += fa(self.lr_slot, 0, 0) + ["        ldr     r12, r10a"]
-        out += fa(self.lr_slot, 1, 0) + ["        ldr     r13, r10a"]
-        out.append("        adds    r14, r14, #%d" % lo(F))
-        out.append("        addc    r15, r15, #%d" % hi(F))
-        out.append("        br      r12a")
+        out.append("%s:%s; return" % (self.ret_label, " " * max(1, 39 - len(self.ret_label))))
+        if rec:
+            out += stk("ldo", "r12", self.lr_loc.slot, 0, 0, "reload the return address")
+            out += stk("ldo", "r13", self.lr_loc.slot, 1, 0, "")
+            out += sp_move(F, "SP += %d: free the stack frame" % F)
+        else:
+            out.append(line("ldr", "r12, %s" % self.lr_loc.operand(0), "reload the return address"))
+            out.append(line("ldr", "r13, %s" % self.lr_loc.operand(1)))
+        out.append(line("br", "r12a", "back to the caller"))
         return out
-
-    # -- statements ---------------------------------------------------------------------------------------
 
     def note(self, s: Node) -> None:
         text = self.m.texts.get(s.where)
         if text is not None:
-            self.code.append("; %d: %s" % (s.where[1], text.strip()))
+            self.code.append("; line %d: %s" % (s.where[1], text.strip()))
 
     def block(self, b: Node, new_scope: bool = True) -> None:
         if new_scope:
@@ -1295,12 +1452,10 @@ class FuncGen:
 
     def statement(self, s: Node) -> None:
         assert not self.live, "temps alive between statements"
-        if s.kind not in ("block",):
+        if s.kind != "block":
             self.note(s)
         getattr(self, "st_" + s.kind)(s)
         self.spill_all()
-        for t in list(self.live):
-            self.release(t)
 
     def st_block(self, s: Node) -> None:
         self.block(s)
@@ -1316,8 +1471,7 @@ class FuncGen:
         if s.value is None:
             raise YError("a local variable needs an initial value; 'undefined' is for globals only", s.where)
         m.check_value_as(s.value, t)
-        slot = self.new_slot(t.resolved().size)
-        loc = FrameLoc(slot)
+        loc = self.slot(t.resolved().size, s.name)
         self.put(loc, s.value, t)
         sym = Sym("var", s.name, t, s.where)
         sym.loc = loc
@@ -1349,12 +1503,8 @@ class FuncGen:
         if rt is None or not same(rt, tt):
             raise YError("'%s' needs both sides of type %s" % (s.op, tt), s.where)
         loc = self.loc(s.target)
-        if isinstance(loc, PtrLoc):
-            self.pin(loc.temp)
-        cur = self.load(loc, tt.resolved().size)
-        if isinstance(loc, PtrLoc):
-            self.unpin(loc.temp)
-        res = self.binop(op, cur, s.value, tt, s.where)
+        cur = self.load(loc, tt.resolved().size, show(s.target))
+        res = self.binop(op, cur, s.value, tt, show(fake))
         self.store(loc, res)
         self.release(res)
         self.free_loc(loc)
@@ -1382,24 +1532,24 @@ class FuncGen:
         self.m.cond(s.cond)
         then, other, end = self.label(), self.label(), self.label()
         self.branch(s.cond, then, other)
-        self.place(then)
+        self.place(then, "then: %s" % show(s.cond))
         self.block(s.then)
-        self.emit("br      =%s" % end)
-        self.place(other)
+        self.emit("br", "=%s" % end, "skip the else part")
+        self.place(other, "else" if s.els is not None else "not: %s" % show(s.cond))
         if s.els is not None:
             self.block(s.els)
-        self.place(end)
+        self.place(end, "end of if")
 
     def st_loop(self, s: Node) -> None:
         if s.name is not None and any(n == s.name for n, _, _ in self.loops):
             raise YError("loop '%s' is inside a loop of the same name" % s.name, s.where)
         top, end = self.label(), self.label()
-        self.place(top)
+        self.place(top, "loop " + s.name if s.name else "loop")
         self.loops.append((s.name, top, end))
         self.block(s.body)
         self.loops.pop()
-        self.emit("br      =%s" % top)
-        self.place(end)
+        self.emit("br", "=%s" % top, "again")
+        self.place(end, "end of loop " + s.name if s.name else "end of loop")
 
     def find_loop(self, s: Node) -> tuple[str | None, str, str]:
         if not self.loops:
@@ -1412,10 +1562,10 @@ class FuncGen:
         raise YError("no enclosing loop named '%s'" % s.name, s.where)
 
     def st_break(self, s: Node) -> None:
-        self.emit("br      =%s" % self.find_loop(s)[2])
+        self.emit("br", "=%s" % self.find_loop(s)[2], "break")
 
     def st_continue(self, s: Node) -> None:
-        self.emit("br      =%s" % self.find_loop(s)[1])
+        self.emit("br", "=%s" % self.find_loop(s)[1], "continue")
 
     def st_return(self, s: Node) -> None:
         ret = self.fnty.ret
@@ -1426,8 +1576,8 @@ class FuncGen:
             if ret is None:
                 raise YError("this function returns nothing", s.where)
             self.m.check_value_as(s.value, ret)
-            self.put(FrameLoc(self.ret_slot), s.value, ret)
-        self.emit("br      =%s" % self.ret_label)
+            self.put(self.ret_loc, s.value, ret)
+        self.emit("br", "=%s" % self.ret_label, "return")
 
     # -- storing values ----------------------------------------------------------------------------------
 
@@ -1438,15 +1588,16 @@ class FuncGen:
             if isinstance(T, ArrayT):
                 esize = T.elem.resolved().size
                 for i, el in enumerate(e.elems):
-                    self.put(loc.plus(i * esize), el, T.elem)
+                    self.put(loc.plus(i * esize, "%s[%d]" % (loc.desc, i)), el, T.elem)
                 rest = T.n - len(e.elems)
                 if rest > 0:
                     last = len(e.elems) - 1
-                    self.copy(loc.plus(len(e.elems) * esize), loc.plus(last * esize), rest * esize)
+                    self.copy(loc.plus(len(e.elems) * esize, "%s[%d...]" % (loc.desc, len(e.elems))),
+                              loc.plus(last * esize, "%s[%d...]" % (loc.desc, last)), rest * esize)
             else:
                 for name, val, _ in e.fields:
                     off, ft = T.field(name)
-                    self.put(loc.plus(off), val, ft)
+                    self.put(loc.plus(off, "%s.%s" % (loc.desc, name)), val, ft)
             return
         if is_aggregate(T):
             src = self.loc(e)
@@ -1457,13 +1608,13 @@ class FuncGen:
         self.store(loc, v)
         self.release(v)
 
-    # -- conditions -----------------------------------------------------------------------------------------
+    # -- conditions -------------------------------------------------------------------------------------
 
     def branch(self, e: Node, yes: str, no: str) -> None:
         """Jump to yes if the condition e holds, else to no.  Nothing stays in registers."""
         self.spill_all()
         if e.const is not None:
-            self.emit("br      =%s" % (yes if e.const else no))
+            self.emit("br", "=%s" % (yes if e.const else no), "%s is always %s" % (show(e), bool(e.const)))
             return
         if e.kind == "unary" and e.op == "not":
             self.branch(e.operand, no, yes)
@@ -1474,19 +1625,19 @@ class FuncGen:
                 self.branch(e.left, mid, no)
             else:
                 self.branch(e.left, yes, mid)
-            self.place(mid)
+            self.place(mid, "%s the right side: %s" % (e.op, show(e.right)))
             self.branch(e.right, yes, no)
             return
         if e.kind == "binary" and e.op in ("eq", "ne", "lt", "le", "gt", "ge"):
             cond = self.compare(e)
-            self.emit("br.%-4s =%s" % (cond, yes))
-            self.emit("br      =%s" % no)
+            self.emit("br.%s" % cond, "=%s" % yes, "if %s" % show(e))
+            self.emit("br", "=%s" % no, "otherwise")
             return
         v = self.val(e)                       # a bool value
-        self.emit("cmp     %s, #1" % v.r(0))
+        self.emit("cmp", "%s, #1" % v.r(0), "%s is true?" % show(e))
         self.release(v)
-        self.emit("br.eq   =%s" % yes)
-        self.emit("br      =%s" % no)
+        self.emit("br.eq", "=%s" % yes, "if %s" % show(e))
+        self.emit("br", "=%s" % no, "otherwise")
 
     def compare(self, e: Node) -> str:
         """Set the flags for the comparison e; returns the condition suffix."""
@@ -1500,16 +1651,18 @@ class FuncGen:
             self.ensure(a)
             self.pin(a)
             if n == 1:
-                self.emit("cmp     %s, %s" % (a.r(0), self.src(b, 0)))
+                self.emit("cmp", "%s, %s" % (a.r(0), self.src(b, 0)), "flags = %s - %s" % (a.desc, self.bdesc(b)))
             else:
                 for k in range(n):
-                    self.emit("eor     %s, %s, %s" % (a.r(k), a.r(k), self.src(b, k)))
+                    self.emit("eor", "%s, %s, %s" % (a.r(k), a.r(k), self.src(b, k)),
+                              "byte %d: 0 where %s and %s agree" % (k, a.desc, self.bdesc(b)))
                 for k in range(1, n - 1):
-                    self.emit("or      %s, %s, %s" % (a.r(0), a.r(0), a.r(k)))
-                self.emit("ord     %s, %s" % (a.r(0), a.r(n - 1)))
+                    self.emit("or", "%s, %s, %s" % (a.r(0), a.r(0), a.r(k)), "collect the differences")
+                self.emit("ord", "%s, %s" % (a.r(0), a.r(n - 1)), "Z = all bytes equal")
             self.unpin(a)
             self.release(a)
             if isinstance(b, Temp):
+                self.unpin(b)
                 self.release(b)
             return op
         first, second = (e.left, e.right) if op in ("lt", "ge") else (e.right, e.left)
@@ -1517,12 +1670,14 @@ class FuncGen:
         b = self.operand(second)
         self.ensure(a)
         self.pin(a)
-        self.emit("cmp     %s, %s" % (a.r(0), self.src(b, 0)))
+        what = "%s - %s" % (a.desc, self.bdesc(b))
+        self.emit("cmp", "%s, %s" % (a.r(0), self.src(b, 0)), "flags = %s, byte 0" % what)
         for k in range(1, n):
-            self.emit("subcd   %s, %s" % (a.r(k), self.src(b, k)))
+            self.emit("subcd", "%s, %s" % (a.r(k), self.src(b, k)), "... byte %d with borrow" % k)
         self.unpin(a)
         self.release(a)
         if isinstance(b, Temp):
+            self.unpin(b)
             self.release(b)
         if op in ("lt", "gt"):
             return "ss" if signed else "su"
@@ -1543,7 +1698,12 @@ class FuncGen:
             return b.r(k)
         return "#%d" % b[k]
 
-    # -- values ---------------------------------------------------------------------------------------------
+    def bdesc(self, b) -> str:
+        if isinstance(b, Temp):
+            return b.desc
+        return str(int.from_bytes(bytes(b), "little"))
+
+    # -- values -------------------------------------------------------------------------------------------
 
     def cval(self, e: Node) -> int | None:
         if e.const is None or e.ty is None:
@@ -1557,17 +1717,17 @@ class FuncGen:
         """A scalar value in a temp (in registers when returned)."""
         c = self.cval(e)
         if c is not None:
-            return self.const(c, size_of(e))
+            return self.const(c, size_of(e), show(e))
         t = getattr(self, "v_" + e.kind)(e)
-        assert t.size == size_of(e) or e.kind in ("as",), (e.kind, t.size, size_of(e))
+        t.desc = show(e)
         return self.ensure(t)
 
     def v_name(self, e: Node) -> Temp:
-        return self.load(e.sym.loc, e.ty.resolved().size)
+        return self.load(e.sym.loc, e.ty.resolved().size, e.name)
 
     def v_index(self, e: Node) -> Temp:
         loc = self.loc(e)
-        t = self.load(loc, e.ty.resolved().size)
+        t = self.load(loc, e.ty.resolved().size, show(e))
         self.free_loc(loc)
         return t
 
@@ -1576,19 +1736,19 @@ class FuncGen:
 
     def v_sstr(self, e: Node) -> Temp:
         label = self.m.string_label(e.data)
-        t = self.temp(2)
-        self.emit("mova    r10a, =%s" % label)
-        self.emit("mov     %s, r10" % t.r(0))
-        self.emit("mov     %s, r11" % t.r(1))
+        t = self.temp(2, show(e))
+        self.emit("mova", "r10a, =%s" % label, "r10a = address of %s" % show(e))
+        self.emit("mov", "%s, r10" % t.r(0))
+        self.emit("mov", "%s, r11" % t.r(1))
         return t
 
     def v_ptr(self, e: Node) -> Temp:
         x = e.operand
         if x.kind == "name" and x.sym.kind == "func":
-            t = self.temp(2)
-            self.emit("mova    r10a, =%s" % x.sym.name)
-            self.emit("mov     %s, r10" % t.r(0))
-            self.emit("mov     %s, r11" % t.r(1))
+            t = self.temp(2, show(e))
+            self.emit("mova", "r10a, =%s" % x.sym.name, "r10a = address of function %s" % x.sym.name)
+            self.emit("mov", "%s, r10" % t.r(0))
+            self.emit("mov", "%s, r11" % t.r(1))
             return t
         return self.addr_of(self.loc(x))
 
@@ -1597,17 +1757,16 @@ class FuncGen:
 
     def v_boolof(self, e: Node) -> Temp:
         self.spill_all()
-        t = Temp(1)
-        t.slot = self.slot_for(1)
+        t = Temp(1, show(e))
+        t.slot = self.slot(1, "value of %s" % show(e, 30))
         yes, no, end = self.label(), self.label(), self.label()
         self.branch(e.operand, yes, no)
         for lab, v in ((yes, 1), (no, 0)):
-            self.place(lab)
-            self.emit("mov     r0, #%d" % v)
-            self.frame_addr(t.slot, 0)
-            self.emit("str     r0, r10a")
+            self.place(lab, "%s is %s" % (show(e.operand, 30), "true" if v else "false"))
+            self.emit("mov", "r0, #%d" % v)
+            self.byte_op("str", "r0", t.slot, 0, "%s = %s" % (show(e, 30), "true" if v else "false"))
             if v:
-                self.emit("br      =%s" % end)
+                self.emit("br", "=%s" % end)
         self.place(end)
         return t
 
@@ -1615,50 +1774,50 @@ class FuncGen:
         t = self.val(e.operand)
         n = t.size
         if isinstance(e.ty.resolved(), BoolT):
-            self.emit("eor     %s, %s, #1" % (t.r(0), t.r(0)))
+            self.emit("eor", "%s, %s, #1" % (t.r(0), t.r(0)), "flip the bool")
             return t
         for k in range(n):
-            self.emit("eor     %s, %s, #255" % (t.r(k), t.r(k)))
+            self.emit("eor", "%s, %s, #255" % (t.r(k), t.r(k)), "invert %s" % byte_desc(t.desc, k, n))
         if e.op == "-":
-            self.add_chain(t, [1] + [0] * (n - 1))
+            self.add_chain(t, [1] + [0] * (n - 1), False, "+ 1: two's complement negation")
         return t
 
-    def add_chain(self, t: Temp, b, sub: bool = False) -> None:
+    def add_chain(self, t: Temp, b, sub: bool, what: str) -> None:
         n = t.size
         base = "sub" if sub else "add"
         for k in range(n):
             if n == 1:
-                ins = base
+                ins, note = base, what
             elif k == 0:
-                ins = base + "s"
+                ins, note = base + "s", "%s, byte 0" % what
             elif k < n - 1:
-                ins = base + "cs"
+                ins, note = base + "cs", "... byte %d with %s" % (k, "borrow" if sub else "carry")
             else:
-                ins = base + "c"
-            self.emit("%-7s %s, %s, %s" % (ins, t.r(k), t.r(k), self.src(b, k)))
+                ins, note = base + "c", "... byte %d with %s" % (k, "borrow" if sub else "carry")
+            self.emit(ins, "%s, %s, %s" % (t.r(k), t.r(k), self.src(b, k)), note)
 
     def v_binary(self, e: Node) -> Temp:
         if e.op in ("shl", "shr", "sar", "rol", "ror"):
             return self.shift(e)
         left = self.val(e.left)
-        return self.binop(e.op, left, e.right, e.ty, e.where)
+        return self.binop(e.op, left, e.right, e.ty, show(e))
 
-    def binop(self, op: str, left: Temp, right: Node, ty: Type, where: tuple[str, int]) -> Temp:
+    def binop(self, op: str, left: Temp, right: Node, ty: Type, what: str) -> Temp:
         """left op right, in place in left's registers (consumes left)."""
         T = ty.resolved()
         if op in ("*", "/", "%"):
             fn = self.m.helper(op, T)
             r = self.val(right)
-            return self.call_helper(fn.name, [left, r], T.size)
+            return self.call_helper(fn, [left, r], T.size, what)
         b = self.operand(right)
         self.ensure(left)
         self.pin(left)
         if op in ("+", "-"):
-            self.add_chain(left, b, sub=(op == "-"))
+            self.add_chain(left, b, op == "-", what)
         else:
             ins = {"&": "and", "|": "or", "^": "eor"}[op]
             for k in range(left.size):
-                self.emit("%-7s %s, %s, %s" % (ins, left.r(k), left.r(k), self.src(b, k)))
+                self.emit(ins, "%s, %s, %s" % (left.r(k), left.r(k), self.src(b, k)), byte_desc(what, k, left.size))
         self.unpin(left)
         if isinstance(b, Temp):
             self.unpin(b)
@@ -1671,6 +1830,7 @@ class FuncGen:
         w = 8 * n
         v = self.val(e.left)
         c = self.cval(e.right)
+        what = show(e)
         if c is not None:
             if e.op in ("rol", "ror"):
                 c %= w
@@ -1679,45 +1839,45 @@ class FuncGen:
             if c == 0:
                 return v
             if c * n <= 24:
-                for _ in range(c):
-                    self.shift1(e.op, v)
+                for i in range(c):
+                    self.shift1(e.op, v, "%s: step %d of %d" % (what, i + 1, c))
                 return v
             self.pin(v)
-            cnt = self.const(c, 1)
+            cnt = self.const(c, 1, "shift count")
             self.unpin(v)
         else:
             cnt = self.val(e.right)                 # v may be spilled meanwhile
             c0 = cnt.r(0)
             if e.op in ("rol", "ror"):
-                self.emit("and     %s, %s, #%d" % (c0, c0, w - 1))
+                self.emit("and", "%s, %s, #%d" % (c0, c0, w - 1), "rotate by the count modulo %d" % w)
             else:
                 for k in range(1, cnt.size):
-                    self.emit("cmp     %s, #0" % cnt.r(k))
-                    self.emit("mov.ne  %s, #%d" % (c0, w))
-                self.emit("cmp     %s, #%d" % (c0, w))
-                self.emit("mov.gu  %s, #%d" % (c0, w))
+                    self.emit("cmp", "%s, #0" % cnt.r(k), "count >= 256?")
+                    self.emit("mov.ne", "%s, #%d" % (c0, w), "then shift %d times" % w)
+                self.emit("cmp", "%s, #%d" % (c0, w), "count > %d?" % w)
+                self.emit("mov.gu", "%s, #%d" % (c0, w), "then shift %d times: all bits out" % w)
         self.pin(cnt)
         self.ensure(v)
         self.pin(v)
         top, done = self.label(), self.label()
-        self.place(top)
-        self.emit("cmp     %s, #0" % cnt.r(0))
-        self.emit("br.eq   =%s" % done)
-        self.shift1(e.op, v)
-        self.emit("sub     %s, %s, #1" % (cnt.r(0), cnt.r(0)))
-        self.emit("br      =%s" % top)
+        self.place(top, "shift loop: %s" % what)
+        self.emit("cmp", "%s, #0" % cnt.r(0), "count left?")
+        self.emit("br.eq", "=%s" % done, "no: done")
+        self.shift1(e.op, v, "%s by one bit" % e.op)
+        self.emit("sub", "%s, %s, #1" % (cnt.r(0), cnt.r(0)), "count - 1")
+        self.emit("br", "=%s" % top)
         self.place(done)
         self.unpin(v, cnt)
         self.release(cnt)
         return v
 
-    def shift1(self, op: str, v: Temp) -> None:
+    def shift1(self, op: str, v: Temp, what: str) -> None:
         n = v.size
         r = [v.r(k) for k in range(n)]
         if op == "shl":
             for k in range(n):
                 ins = "lsl" if k == 0 and n == 1 else ("lsls" if k == 0 else ("csls" if k < n - 1 else "csl"))
-                self.emit("%-7s %s, %s" % (ins, r[k], r[k]))
+                self.emit(ins, "%s, %s" % (r[k], r[k]), what if k == 0 else "... carry into byte %d" % k)
         elif op in ("shr", "sar"):
             first = "lsr" if op == "shr" else "asr"
             for i, k in enumerate(range(n - 1, -1, -1)):
@@ -1725,15 +1885,15 @@ class FuncGen:
                     ins = first if n == 1 else first + "s"
                 else:
                     ins = "csrs" if k > 0 else "csr"
-                self.emit("%-7s %s, %s" % (ins, r[k], r[k]))
+                self.emit(ins, "%s, %s" % (r[k], r[k]), what if i == 0 else "... carry into byte %d" % k)
         elif op == "rol":
-            self.emit("lsld    %s" % r[n - 1])
+            self.emit("lsld", r[n - 1], "%s: C = the top bit" % what)
             for k in range(n):
-                self.emit("%-7s %s, %s" % ("csls" if k < n - 1 else "csl", r[k], r[k]))
+                self.emit("csls" if k < n - 1 else "csl", "%s, %s" % (r[k], r[k]), "... rotate byte %d" % k)
         else:
-            self.emit("lsrd    %s" % r[0])
+            self.emit("lsrd", r[0], "%s: C = the low bit" % what)
             for k in range(n - 1, -1, -1):
-                self.emit("%-7s %s, %s" % ("csrs" if k > 0 else "csr", r[k], r[k]))
+                self.emit("csrs" if k > 0 else "csr", "%s, %s" % (r[k], r[k]), "... rotate byte %d" % k)
 
     def v_cast(self, e: Node) -> Temp:
         S = e.operand.ty.resolved()
@@ -1744,9 +1904,9 @@ class FuncGen:
                 return t
             n = t.size
             for k in range(1, n - 1):
-                self.emit("or      %s, %s, %s" % (t.r(0), t.r(0), t.r(k)))
-            self.emit("ord     %s, %s" % (t.r(0), t.r(n - 1) if n > 1 else "#0"))
-            self.emit("mov.ne  %s, #1" % t.r(0))
+                self.emit("or", "%s, %s, %s" % (t.r(0), t.r(0), t.r(k)), "collect the bits of %s" % t.desc)
+            self.emit("ord", "%s, %s" % (t.r(0), t.r(n - 1) if n > 1 else "#0"), "Z = (%s is 0)" % t.desc)
+            self.emit("mov.ne", "%s, #1" % t.r(0), "not 0: true")
             self.resize(t, 1)
             return t
         if D.size < t.size:
@@ -1758,13 +1918,7 @@ class FuncGen:
     def v_as(self, e: Node) -> Temp:
         D = e.ty.resolved()
         x = e.operand
-        xs = size_of(x)
-        if xs != D.size and (self.m.is_lvalue(x) or is_aggregate(x.ty)):
-            loc = self.loc(x)
-            t = self.load(loc, D.size)
-            self.free_loc(loc)
-            return t
-        if is_aggregate(x.ty):
+        if (size_of(x) != D.size and self.m.is_lvalue(x)) or is_aggregate(x.ty):
             loc = self.loc(x)
             t = self.load(loc, D.size)
             self.free_loc(loc)
@@ -1776,7 +1930,7 @@ class FuncGen:
             self.extend(t, D.size, False)
         return t
 
-    # -- locations ------------------------------------------------------------------------------------------
+    # -- locations --------------------------------------------------------------------------------------
 
     def loc(self, e: Node):
         """The memory of an lvalue or an aggregate value."""
@@ -1786,16 +1940,16 @@ class FuncGen:
                 raise YError("'%s' is not a variable" % e.name, e.where)
             return e.sym.loc
         if k == "deref":
-            return PtrLoc(self.val(e.ptr))
+            return PtrLoc(self.val(e.ptr), 0, show(e))
         if k == "field":
-            return self.loc(e.obj).plus(e.offset)
+            return self.loc(e.obj).plus(e.offset, show(e))
         if k == "index":
             ot = e.obj.ty.resolved()
             esize = e.ty.resolved().size
-            base = self.loc(e.obj) if isinstance(ot, ArrayT) else PtrLoc(self.val(e.obj))
+            base = self.loc(e.obj) if isinstance(ot, ArrayT) else PtrLoc(self.val(e.obj), 0, show(e.obj))
             c = self.cval(e.index)
             if c is not None:
-                return base.plus(c * esize)
+                return base.plus(c * esize, show(e))
             a = self.addr_of(base)
             i = self.val(e.index)
             self.extend(i, 2, e.index.ty.resolved().signed)
@@ -1803,12 +1957,13 @@ class FuncGen:
             self.pin(i)
             self.ensure(a)
             self.unpin(i)
-            self.emit("adds    %s, %s, %s" % (a.r(0), a.r(0), i.r(0)))
-            self.emit("addc    %s, %s, %s" % (a.r(1), a.r(1), i.r(1)))
+            self.emit("adds", "%s, %s, %s" % (a.r(0), a.r(0), i.r(0)), "address of %s" % show(e))
+            self.emit("addc", "%s, %s, %s" % (a.r(1), a.r(1), i.r(1)))
             self.release(i)
-            return PtrLoc(a)
+            a.desc = "@ptr(%s)" % show(e)
+            return PtrLoc(a, 0, show(e))
         if k == "str":
-            return GlobalLoc(self.m.string_label(e.data))
+            return GlobalLoc(self.m.string_label(e.data), 0, show(e))
         if k == "call":
             return self.call(e)
         if k == "as":
@@ -1816,14 +1971,12 @@ class FuncGen:
             if self.m.is_lvalue(x) or is_aggregate(x.ty):
                 return self.loc(x)
             v = self.val(x)
-            slot = self.new_slot(max(v.size, e.ty.resolved().size))
-            loc = FrameLoc(slot)
+            loc = self.slot(max(v.size, e.ty.resolved().size), "scratch: %s" % show(e, 30))
             self.store(loc, v)
             self.release(v)
             return loc
         if k == "init":
-            slot = self.new_slot(e.ty.resolved().size)
-            loc = FrameLoc(slot)
+            loc = self.slot(e.ty.resolved().size, "scratch: initialiser")
             self.put(loc, e, e.ty)
             return loc
         raise YError("this expression has no memory location", e.where)
@@ -1834,82 +1987,189 @@ class FuncGen:
             return
         if size & (size - 1) == 0:
             for _ in range(size.bit_length() - 1):
-                self.emit("lsls    %s, %s" % (i.r(0), i.r(0)))
-                self.emit("csl     %s, %s" % (i.r(1), i.r(1)))
+                self.emit("lsls", "%s, %s" % (i.r(0), i.r(0)), "index * 2 (element size %d)" % size)
+                self.emit("csl", "%s, %s" % (i.r(1), i.r(1)))
             return
         self.pin(i)
-        acc = self.const(0, 2)
+        acc = self.const(0, 2, "index * %d" % size)
         self.unpin(i)
         bit = 1
         while bit <= size:
             if size & bit:
-                self.emit("adds    %s, %s, %s" % (acc.r(0), acc.r(0), i.r(0)))
-                self.emit("addc    %s, %s, %s" % (acc.r(1), acc.r(1), i.r(1)))
+                self.emit("adds", "%s, %s, %s" % (acc.r(0), acc.r(0), i.r(0)), "+ index * %d" % bit)
+                self.emit("addc", "%s, %s, %s" % (acc.r(1), acc.r(1), i.r(1)))
             bit <<= 1
             if bit <= size:
-                self.emit("lsls    %s, %s" % (i.r(0), i.r(0)))
-                self.emit("csl     %s, %s" % (i.r(1), i.r(1)))
+                self.emit("lsls", "%s, %s" % (i.r(0), i.r(0)), "index * %d" % bit)
+                self.emit("csl", "%s, %s" % (i.r(1), i.r(1)))
         for k in range(2):
-            self.emit("mov     %s, %s" % (i.r(k), acc.r(k)))
+            self.emit("mov", "%s, %s" % (i.r(k), acc.r(k)), "index * %d (element size)" % size if k == 0 else "")
         self.release(acc)
 
-    # -- calls ------------------------------------------------------------------------------------------------
+    # -- calls (ABI 0.3) --------------------------------------------------------------------------------
 
     def call(self, e: Node):
         fnty = e.fnty
-        fp = None
-        if e.direct is None:
-            fp = self.val(e.func)
-        writers = []
+        if e.direct is not None:
+            target = e.direct
+            target.called = True
+        else:
+            target = self.val(e.func)
+        args = []
         for a, p in zip(e.args, fnty.params):
-            writers.append((p.resolved().size, lambda loc, a=a, p=p: self.put(loc, a, p)))
+            if is_aggregate(p):
+                scratch = self.slot(p.resolved().size, "scratch: argument %s" % show(a, 30))
+                self.put(scratch, a, p)
+                args.append(scratch)
+            else:
+                args.append(self.val(a))
+        return self.emit_call(target, args, fnty, show(e))
+
+    def call_helper(self, fn: Sym, args: list[Temp], R: int, what: str):
+        fn.called = True
+        return self.emit_call(fn, args, fn.ty, what)
+
+    def emit_call(self, target, args: list, fnty: FnT, what: str):
+        """Call target (a Sym, or a temp holding a function pointer) with the
+        evaluated arguments (temps, or frame locations of aggregates)."""
         ret = fnty.ret
         R = ret.resolved().size if ret else 0
-        target = e.direct.name if e.direct is not None else fp
-        return self.emit_call(target, writers, R, ret is not None and is_aggregate(ret))
-
-    def call_helper(self, name: str, args: list[Temp], R: int) -> Temp:
-        writers = [(t.size, lambda loc, t=t: (self.store(loc, t), self.release(t))) for t in args]
-        return self.emit_call(name, writers, R, False)
-
-    def emit_call(self, target, writers, R: int, aggregate: bool):
-        if isinstance(target, Temp):
-            self.spill(target)
+        aggregate = ret is not None and is_aggregate(ret)
+        if isinstance(target, Sym):
+            if target.recursive:
+                result = self.call_stack(target.name, None, args, fnty, what)
+            else:
+                frame = GlobalLoc(target.name + ".frame", 0, target.name + ".frame")
+                result = self.call_static(frame, target.name, None, args, fnty, what)
+            for a in args:
+                if isinstance(a, Temp):
+                    self.release(a)
+            return result
+        # through a pointer: the header before the function says which convention
+        fp = target
+        self.ensure(fp)
+        self.pin(fp)
+        hf = self.temp(2, "frame of %s" % fp.desc)
+        self.unpin(fp)
+        self.code.append("; call through a pointer: the header at the function - 4 holds its static frame, "
+                         "or 0 for a @recursive function")
+        self.emit("mov", "r10, %s" % fp.r(0), "r10a = the function in %s" % fp.regs_text())
+        self.emit("mov", "r11, %s" % fp.r(1))
+        self.emit("ldo", "%s, r10a, #-4" % hf.r(0), "its static frame (header), low")
+        self.emit("ldo", "%s, r10a, #-3" % hf.r(1), "... high")
+        self.emit("ord", "%s, %s" % (hf.r(0), hf.r(1)), "0: @recursive, arguments on the stack")
         self.spill_all()
-        A = R + sum(size for size, _ in writers)
+        stack_path, done = self.label(), self.label()
+        self.emit("br.eq", "=%s" % stack_path)
+        result = None
+        if R:
+            result = self.slot(R, "scratch: result of %s" % show_name(what))
+        res = self.call_static(PtrLoc(hf, 0, "frame of the function"), None, fp, args, fnty, what)
+        self.keep_result(res, result, R, aggregate)
+        self.spill_all()
+        self.emit("br", "=%s" % done)
+        self.place(stack_path, "the function is @recursive")
+        res = self.call_stack(None, fp, args, fnty, what)
+        self.keep_result(res, result, R, aggregate)
+        self.spill_all()
+        self.place(done)
+        for a in args:
+            if isinstance(a, Temp):
+                self.release(a)
+        self.release(hf)
+        self.release(fp)
+        if not R:
+            return None
+        if aggregate:
+            return result
+        t = Temp(R, what)
+        t.slot = result
+        return t
+
+    def keep_result(self, res, slot, R: int, aggregate: bool) -> None:
+        """Put the result of one path of a call through a pointer into slot."""
+        if not R:
+            return
+        if aggregate:
+            self.copy(slot, res, R)
+        else:
+            self.store(slot, res)
+            self.release(res)
+
+    def call_static(self, frame, name: str | None, fp: Temp | None, args: list, fnty: FnT, what: str):
+        """Call a non-recursive function: the arguments go into its frame."""
+        ret = fnty.ret
+        R = ret.resolved().size if ret else 0
+        self.spill_all()
+        off = R
+        for i, (arg, p) in enumerate(zip(args, fnty.params)):
+            size = p.resolved().size
+            dst = frame.plus(off, "argument %d of %s" % (i + 1, name or "the call"))
+            if isinstance(arg, Temp):
+                self.store(dst, arg)
+            else:
+                self.copy(dst, arg, size)
+            off += size
+        self.forget_reloads()
+        self.brl(name, fp, what)
+        if not R:
+            return None
+        res_loc = frame.plus(0, "result of %s" % (name or "the call"))
+        if is_aggregate(ret):
+            result = self.slot(R, "scratch: result of %s" % show_name(what))
+            self.copy(result, res_loc, R)
+            return result
+        return self.load(res_loc, R, what)
+
+    def call_stack(self, name: str | None, fp: Temp | None, args: list, fnty: FnT, what: str):
+        """Call a @recursive function: result and arguments below SP."""
+        ret = fnty.ret
+        R = ret.resolved().size if ret else 0
+        A = R + sum(p.resolved().size for p in fnty.params)
+        self.spill_all()
         if A:
-            self.sp_sub(A)
+            self.emit("lea", "r14a, r14a, #%d" % -A, "SP -= %d: result and arguments of %s" % (A, name or "the call"))
             self.sp_delta += A
         delta = self.sp_delta
         off = R
-        for size, write in writers:
-            write(SpLoc(off, delta))
-            self.spill_all()
+        for i, (arg, p) in enumerate(zip(args, fnty.params)):
+            size = p.resolved().size
+            dst = SpLoc(off, delta, "argument %d of %s" % (i + 1, name or "the call"))
+            if isinstance(arg, Temp):
+                self.store(dst, arg)
+            else:
+                self.copy(dst, arg, size)
             off += size
-        if isinstance(target, Temp):
-            self.ensure(target)
-            self.emit("mov     r10, %s" % target.r(0))
-            self.emit("mov     r11, %s" % target.r(1))
-            self.release(target)
-            self.spill_all()
-            self.emit("brl     r12a, r10a")
-        else:
-            self.spill_all()
-            self.emit("brl     r12a, =%s" % target)
+        self.forget_reloads()
+        self.brl(name, fp, what)
         result = None
-        if R and not aggregate:
-            result = self.temp(R)
-            for k in range(R):
-                self.sp_addr(1 + k)
-                self.emit("ldr     %s, r10a" % result.r(k))
-        elif R:
-            slot = self.new_slot(R)
-            result = FrameLoc(slot)
-            self.copy(result, SpLoc(0, delta), R)
+        if R:
+            res_loc = SpLoc(0, delta, "result of %s" % (name or "the call"))
+            if is_aggregate(ret):
+                result = self.slot(R, "scratch: result of %s" % show_name(what))
+                self.copy(result, res_loc, R)
+            else:
+                result = self.load(res_loc, R, what)
         if A:
-            self.sp_add(A)
+            self.emit("lea", "r14a, r14a, #%d" % A, "SP += %d" % A)
             self.sp_delta -= A
         return result
+
+    def brl(self, name: str | None, fp: Temp | None, what: str) -> None:
+        if fp is None:
+            self.emit("brl", "r12a, =%s" % name, "call %s" % what)
+            return
+        self.spill_all()                     # everything in memory, fp included
+        self.ensure(fp)
+        self.emit("mov", "r10, %s" % fp.r(0), "r10a = the function")
+        self.emit("mov", "r11, %s" % fp.r(1))
+        self.free.update(fp.regs)            # its value stays in its spill slot
+        self.live.remove(fp)
+        fp.regs = None
+        self.emit("brl", "r12a, r10a", "call %s" % what)
+
+def show_name(what: str) -> str:
+    return what if len(what) <= 30 else what[:27] + "..."
 
 
 def size_of(e: Node) -> int:

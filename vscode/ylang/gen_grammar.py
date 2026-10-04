@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # ---- word lists: edit these as the language changes --------------------------
 
 CONTROL = ["if", "else", "loop", "break", "continue", "return"]
-DECLARATIONS = ["decl", "impl", "var", "type", "internal"]   # decl/impl/var NAME: ...  type NAME = ...
+DECLARATIONS = ["decl", "impl", "var", "type"]   # decl/impl/var NAME: ...  type NAME = ...
 COMPOUND = ["struct", "union", "fn"]                         # struct{...} union{...} fn(...) returns T
 OTHER = ["returns"]
 TYPES = ["int8", "int16", "int32", "uint8", "uint16", "uint32", "byte", "char", "bool", "addr", "opaque"]
@@ -24,7 +24,7 @@ CONSTANTS = ["true", "false", "nullptr", "undefined", "_"]
 LOGIC = ["eq", "ne", "lt", "le", "gt", "ge", "not", "and", "or"]   # the word operators,
 SHIFTS = ["shl", "shr", "sar", "rol", "ror"]                       # all bold in one colour
 BUILTINS = ["ptr", "sizeof", "bool", "as", "cast"]                  # @ptr(x) ...
-ATTRIBUTES = ["main", "section", "reg"]                             # @main ...
+ATTRIBUTES = ["main", "section", "reg", "internal", "recursive"]    # @main ...
 PREPROCESSOR = ["INCLUDE", "DEFINE", "IFDEF", "IFNDEF", "ELSE", "ENDIF"]
 WORD_LISTS = {"control": CONTROL, "declarations": DECLARATIONS, "compound": COMPOUND,
               "other": OTHER, "types": TYPES, "constants": CONSTANTS, "logic": LOGIC,

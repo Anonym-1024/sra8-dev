@@ -212,6 +212,14 @@
           "value": "@reg"
         },
         {
+          "type": "STRING",
+          "value": "@internal"
+        },
+        {
+          "type": "STRING",
+          "value": "@recursive"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -317,18 +325,6 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "STRING",
-              "value": "internal"
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        },
-        {
           "type": "STRING",
           "value": "impl"
         },
@@ -365,18 +361,6 @@
     "variable_declaration": {
       "type": "SEQ",
       "members": [
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "STRING",
-              "value": "internal"
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        },
         {
           "type": "STRING",
           "value": "var"
