@@ -812,9 +812,10 @@ reinterprets `p[i]`.
   is imported. Types are not exported; headers (`.yh`) carry shared types
   and the `decl`s of exported names.
 - Y names are the assembly label names, unchanged, so Y and assembly can
-  refer to each other's symbols once the calling convention exists.
+  refer to each other's symbols.
 
-Compiler command line (planned):
+The compiler `ylangc` and the calling convention of its version 0.1 are
+described in [ylangc.md](ylangc.md):
 
 ```
 ylangc [-o out.s] [-I dir]... [-D NAME[=text]]... file.y
@@ -824,12 +825,10 @@ ylangc [-o out.s] [-I dir]... [-D NAME[=text]]... file.y
 
 ## 13. Not specified yet
 
-- **The calling convention (ABI):** how arguments and results are passed,
-  which registers a function may change, stack frames, how the `@main`
-  function is started, and the startup code. The earlier runtime in `lib/`
-  was removed; it will be written again with the ABI.
-- **Code generation:** sections used for variables, `undefined` and zero
-  initialised data, and how `@reg` is honoured.
+- **The final calling convention (ABI).** [ylangc.md](ylangc.md) defines
+  ABI 0.1, the simplest one that works: everything on the stack, every
+  register changed by a call. It will be replaced.
+- **`@reg`**: ylangc 0.1 does not support it.
 - **Hardware access:** the UART port instructions (`ptr`, `ptw`),
   interrupt control (`intrr`, `intrw`, `psrw`), interrupt handlers (saving
   registers and leaving with `intrw #0`), inline assembly. `@section(isr)`

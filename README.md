@@ -1,13 +1,14 @@
 # SRA-8 development kit
 
-Assembler, linker and disassembler for the SRA-8 CPU of the
-`sra-8-fpga` project, with syntax highlighting for VS Code and Zed. The
-design is described in [SRA8_DEVKIT_SPEC.md](SRA8_DEVKIT_SPEC.md); the Y
-language, which has no compiler yet, in [docs/y.md](docs/y.md).
+Assembler, linker, disassembler and a first Y compiler for the SRA-8 CPU
+of the `sra-8-fpga` project, with syntax highlighting for VS Code and Zed.
+The design is described in [SRA8_DEVKIT_SPEC.md](SRA8_DEVKIT_SPEC.md), the
+Y language in [docs/y.md](docs/y.md) and its compiler in
+[docs/ylangc.md](docs/ylangc.md).
 
 ```
-  main.s ──sra8-as──▶ main.o ─┐
-  uart.s ──sra8-as──▶ uart.o ─┼──sra8-ld -T script.ld──▶ program.mem / .bin / .hex, .map, .lst
+  main.y ──ylangc──▶ main.s ──sra8-as──▶ main.o ─┐
+                     uart.s ──sra8-as──▶ uart.o ─┼──sra8-ld -T script.ld──▶ program.mem / .bin / .hex, .map
 ```
 
 The tools are written in Python 3 (3.10 or newer; 3.9 also works) with
@@ -20,8 +21,8 @@ the standard library only. A C23 port with identical behaviour is in
 make install
 ```
 
-This puts symbolic links to `bin/sra8-as`, `bin/sra8-ld` and
-`bin/sra8-objdump` into `~/.local/bin`. The links point into this
+This puts symbolic links to `bin/sra8-as`, `bin/sra8-ld`,
+`bin/sra8-objdump` and `bin/ylangc` into `~/.local/bin`. The links point into this
 checkout, so an edit or a `git pull` takes effect immediately, and the
 linker keeps finding its default script in `ldscripts/`. Nothing is
 copied, and `make uninstall` removes the links.
@@ -54,10 +55,17 @@ sra8-as examples/asm/terminal.s -o terminal.o
 sra8-ld -T ldscripts/flat.ld --format mem -o program.mem terminal.o
 ```
 
-Build all sample programs into `examples/build/`:
+Build all sample programs into `examples/build/`, including
+`hello.mem`, a Y program that greets and echoes over the UART:
 
 ```bash
 make examples
+```
+
+Compile a Y file to assembly:
+
+```bash
+ylangc examples/y/hello.y -o hello.s
 ```
 
 Look inside an object or an image:
@@ -73,6 +81,7 @@ sra8-objdump -d -t terminal.o
 | `sra8-as` | `.s` to relocatable `.o` | [docs/asm.md](docs/asm.md) |
 | `sra8-ld` | objects plus linker script to `.bin`, `.mem` or Intel HEX, with a map | [docs/ld.md](docs/ld.md) |
 | `sra8-objdump` | disassembles objects and images into source that assembles again; dumps sections, exports, imports and relocations | `sra8-objdump --help` |
+| `ylangc` | Y to assembly (version 0.1: simple and unoptimised) | [docs/ylangc.md](docs/ylangc.md) |
 
 Further documentation: [docs/isa.md](docs/isa.md) is the instruction set,
 generated from `sra8/isa.py`. [docs/obj.md](docs/obj.md) is the object
@@ -83,10 +92,10 @@ convention and compiler are still to come.
 
 | Path | Content |
 |---|---|
-| `sra8/` | the Python package: `isa.py` (the only place opcode numbers live), `obj.py`, `objdump.py`, `asm/`, `ld/` |
-| `bin/` | launchers: `sra8-as`, `sra8-ld`, `sra8-objdump` |
+| `sra8/` | the Python package: `isa.py` (the only place opcode numbers live), `obj.py`, `objdump.py`, `asm/`, `ld/`, `ylang/` (the Y compiler) |
+| `bin/` | launchers: `sra8-as`, `sra8-ld`, `sra8-objdump`, `ylangc` |
 | `ldscripts/` | `boot.ld` (default: boot ROM and RAM) and `flat.ld` (legacy layout) |
-| `examples/` | the six sample programs of the FPGA project, ported by removing `.org` |
+| `examples/` | the six sample programs of the FPGA project, ported by removing `.org`; `y/`: a Y program with UART routines in assembly, and `tour.y`, every construct of Y |
 | `tests/` | the `unittest` suite; `golden/` holds the legacy assembler's output |
 | `docs/` | reference documentation |
 | `vscode/sra8-lang/` | VS Code extension for `.s` and `.ld` files |

@@ -1,0 +1,12 @@
+// The UART routines of uart.s (ABI 0.1, docs/ylangc.md).
+
+!IFNDEF UART_YH
+!DEFINE UART_YH
+
+// send c, then wait until it is on the wire
+decl uart_putc: fn(c: char);
+
+// wait for a received byte and return it
+decl uart_getc: fn() returns char;
+
+!ENDIF

@@ -1,8 +1,8 @@
-# SRA-8 development kit: assembler, linker and disassembler in Python 3,
+# SRA-8 development kit: assembler, linker, disassembler and Y compiler in Python 3,
 # standard library only.  The C23 port lives in c/ (make c).
 #
 #   make test           run the test suite
-#   make install        make sra8-as, sra8-ld, sra8-objdump callable from anywhere
+#   make install        make sra8-as, sra8-ld, sra8-objdump, ylangc callable from anywhere
 #   make uninstall      remove them again
 #   make docs vscode    regenerate docs/isa.md and the VS Code grammars
 #   make examples       build the example programs into examples/build
@@ -13,7 +13,7 @@
 
 PYTHON ?= python3
 PREFIX ?= $(HOME)/.local
-TOOLS  := sra8-as sra8-ld sra8-objdump
+TOOLS  := sra8-as sra8-ld sra8-objdump ylangc
 
 .PHONY: all test install uninstall docs vscode examples golden c zed zed-extension clean
 
