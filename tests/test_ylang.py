@@ -1,6 +1,6 @@
-"""The Y compiler ylangc 0.3 (docs/ylangc.md): preprocessor, diagnostics,
-static data, ABI 0.3 static and stack frames, and that the output assembles
-and links."""
+"""The Y compiler ylangc 0.4 (docs/ylangc.md): preprocessor, diagnostics,
+static data, ABI 0.4 static and stack frames, the size optimisations, and
+that the output assembles and links."""
 
 import os
 import re
@@ -28,7 +28,9 @@ place rom
     data *
 end
 place ram
+    symbol __bss_start
     bss *
+    symbol __bss_end
 end
 symbol __stack_top = last ram
 """
@@ -262,13 +264,14 @@ class Output(unittest.TestCase):
                 return f(n - 1) + 1;
             }
             """)
-        self.assertRegex(asm, r"\.addr   0 .*\n\s+\.dword  3 .*\nf:")
-        self.assertIn("lea     r14a, r14a, #-3", asm)    # prologue: the frame
-        self.assertIn("sto     r12, r14a, #2", asm)      # the return address
-        self.assertIn("ldo     r0, r14a, #5", asm)       # n, in the caller's area
-        self.assertIn("lea     r14a, r14a, #-2", asm)    # call: result and argument
+        self.assertRegex(asm, r"\.addr   0 .*\n\s+\.dword  2 .*\nf:")
+        self.assertIn("lea     r14a, r14a, #-2", asm)    # prologue: the frame (the return address)
+        self.assertIn("sto     r12, r14a, #1", asm)      # the return address
+        self.assertIn("ldo     r0, r14a, #4", asm)       # n, in the caller's area
+        self.assertIn("ldo     r0, r14a, #6", asm)       # ... read below the call's area
+        self.assertIn("sto     r0, r14a, #2", asm)       # the argument, straight into the area
         self.assertIn("ldo     r0, r14a, #1", asm)       # the callee's result
-        self.assertIn("lea     r14a, r14a, #3", asm)     # epilogue
+        self.assertIn("lea     r14a, r14a, #2", asm)     # epilogue
         self.assertNotIn("ldr ", asm)
         self.assertNotIn("str ", asm)
 
@@ -302,10 +305,11 @@ class Output(unittest.TestCase):
             var r: int16 = 0;
             impl f: fn(a: int16, b: int16) returns int16 { return a / b; }
             """)
-        self.assertIn("__divs16:", asm)
-        self.assertIn("__divu16:", asm)            # needed by __divs16
+        self.assertIn("__divmods16:", asm)         # / and % share one routine
+        self.assertNotIn("__divmodu16:", asm)
         self.assertNotIn("__mul16:", asm)
         self.assertNotIn(".export __", asm)
+        self.assertNotIn(".addr   =__", asm)        # helpers have no header
 
     def test_hello_example_builds_for_the_boot_rom(self):
         asm = compile_file(os.path.join(EXAMPLES, "y", "hello.y"))
@@ -318,8 +322,82 @@ class Output(unittest.TestCase):
         self.assertEqual(syms["_start"], 0)
         self.assertLess(len(res.image), 4096)
 
+    def test_leaf_functions_keep_r12a(self):
+        asm = compile_text("""
+            impl leaf: fn(a: int8) returns int8 { return a + 1; }
+            impl caller: fn() returns int8 { return leaf(2); }
+            """)
+        leaf = asm[asm.index("\nleaf:"):asm.index("\ncaller:")]
+        code = "\n".join(l.split(";")[0] for l in leaf.split("\n"))
+        self.assertNotIn("r12", code.replace("br      r12a", ""))
+        self.assertIn("str     r12, =caller.frame", asm)
+
+    def test_header_only_when_needed(self):
+        asm = compile_text("""
+            @internal impl hidden: fn() { }
+            @internal impl pointed: fn() { }
+            impl visible: fn() { hidden(); var p: *fn() = @ptr(pointed); }
+            """)
+        self.assertNotIn("=hidden.frame ", asm.split("hidden:")[0][-200:])
+        self.assertRegex(asm, r"\.addr   =pointed\.frame .*\n.*\npointed:")
+        self.assertRegex(asm, r"\.addr   =visible\.frame .*\n.*\nvisible:")
+        self.assertNotRegex(asm, r"\.addr   =hidden\.frame")
+
+    def test_zero_globals_in_bss_and_zeroed_at_start(self):
+        asm = compile_text("""
+            var zeros: [64]char = {0, _};
+            var some: [2]uint8 = {0, 1};
+            @main impl m: fn() { }
+            """)
+        self.assertIn("zeros:", asm.split("        .bss\n")[1])
+        self.assertIn("some:", asm.split("        .data\n")[1].split("        .bss\n")[0])
+        self.assertIn("mova    r2a, =__bss_start", asm)
+        self.assertIn("sti     r0, r2a, #1", asm)
+
+    def test_constant_operands_need_no_helper(self):
+        asm = compile_text("""
+            impl f: fn(a: uint16) returns uint16 { return a * 10 + a / 4 + a % 8 + 3 * a; }
+            """)
+        self.assertNotIn("__", asm)
+        self.assertIn("and     r1, r1, #7", asm.replace("r0, r0, #7", "r1, r1, #7").replace("r2, r2, #7", "r1, r1, #7"))
+        signed = compile_text("impl f: fn(a: int16) returns int16 { return a / 4; }\n")
+        self.assertIn("__divmods16", signed)     # rounds toward 0: not a shift
+
+    def test_register_offset_indexing(self):
+        asm = compile_text("""
+            var buf: [8]uint8 = {1, _};
+            impl get: fn(p: [*]uint8, i: uint16) returns uint8 { return p[i]; }
+            impl put: fn(i: uint16, v: uint8) { buf[i] = v; }
+            impl get16: fn(p: [*]uint16, i: uint16) returns uint16 { return p[i]; }
+            """)
+        self.assertIn("ldr     r10, =get.frame+1", asm)      # the pointer straight into r10a
+        self.assertRegex(asm, r"ldo     r\d, r10a, r\da")
+        self.assertIn("mova    r10a, =buf", asm)
+        self.assertRegex(asm, r"sto     r\d, r10a, r\da")
+        self.assertRegex(asm, r"lea     r10a, r10a, r\da")   # 2 bytes: + index, then #0 and #1
+
+    def test_arguments_go_straight_to_the_frame(self):
+        asm = compile_text("""
+            impl g: fn(a: int16, b: int16) returns int16 { return a - b; }
+            impl f: fn(x: int16) returns int16 { return g(x + 1, x); }
+            """)
+        self.assertNotRegex(asm, r"; (spill|reload) (?!the return address)")
+
+    def test_branches_are_cleaned_up(self):
+        asm = compile_text("""
+            impl f: fn(n: uint8) returns uint8 {
+                var i: uint8 = 0;
+                loop { if (i eq n) { break; } i += 1; }
+                return i;
+            }
+            """)
+        body = asm[asm.index("\nf:"):]
+        self.assertEqual(body.count("br "), 2)        # back to the loop, and `br r12a`
+        self.assertEqual(body.count("br."), 1)        # the break: one conditional branch
+        self.assertEqual(body.count("; line 4"), 2)   # the loop, and i += 1: no repeats
+
     def test_test_programs_assemble_and_link(self):
-        for name in ("features.y", "recursion.y", "stackframes.y"):
+        for name in ("features.y", "recursion.y", "stackframes.y", "indexing.y"):
             asm = compile_file(os.path.join(TESTS, name))
             r = assemble_text(asm)
             self.assertEqual(r.errors, [], name)

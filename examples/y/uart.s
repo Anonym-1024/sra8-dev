@@ -1,9 +1,9 @@
-; uart.s -- UART routines for Y programs, written to ABI 0.3 (docs/ylangc.md).
+; uart.s -- UART routines for Y programs, written to ABI 0.4 (docs/ylangc.md).
 ;
 ;   uart_putc: fn(c: char)              the caller writes c to uart_putc.frame
 ;   uart_getc: fn() returns char        the result goes to uart_getc.frame
 ;
-; Like every function that is not @recursive (ABI 0.3), each routine has a
+; Like every function that is not @recursive (ABI 0.4), each routine has a
 ; static frame (name.frame) and a 4-byte header before its entry: the
 ; address and the size of the frame.  Both are leaf routines, so their frames need no room
 ; for the return address.

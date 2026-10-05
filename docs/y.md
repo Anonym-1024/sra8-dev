@@ -828,7 +828,7 @@ reinterprets `p[i]`.
 - Y names are the assembly label names, unchanged, so Y and assembly can
   refer to each other's symbols.
 
-The compiler `ylangc` and the calling convention of its version 0.3 are
+The compiler `ylangc` and the calling convention of its version 0.4 are
 described in [ylangc.md](ylangc.md):
 
 ```
@@ -840,7 +840,7 @@ ylangc [-o out.s] [-I dir]... [-D NAME[=text]]... file.y
 ## 13. Not specified yet
 
 - **The final calling convention (ABI).** [ylangc.md](ylangc.md) defines
-  ABI 0.3, a simple one: a static frame per function, a stack frame for
+  ABI 0.4, a simple one: a static frame per function, a stack frame for
   each call of a `@recursive` function, every register changed by a call.
   It will be replaced.
 - **`@reg`**: ylangc does not support it yet.
