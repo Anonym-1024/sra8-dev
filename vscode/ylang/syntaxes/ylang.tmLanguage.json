@@ -34,6 +34,9 @@
       "include": "#returns"
     },
     {
+      "include": "#cast-type"
+    },
+    {
       "include": "#prefixed-type"
     },
     {
@@ -260,6 +263,29 @@
           "name": "storage.type.compound.ylang"
         },
         "5": {
+          "name": "entity.name.type.ylang"
+        }
+      }
+    },
+    "cast-type": {
+      "match": "(@(?:as|cast))\\s*(\\()\\s*((?:\\*|\\[\\*\\]|\\[[^\\[\\]]*\\])*)\\s*(?:\\b(opaque|uint16|uint32|int16|int32|uint8|addr|bool|byte|char|int8)\\b|\\b(struct|union|type|fn)\\b|([A-Za-z_][A-Za-z0-9_]*))",
+      "captures": {
+        "1": {
+          "name": "support.function.builtin.ylang"
+        },
+        "2": {
+          "name": "punctuation.parenthesis.ylang"
+        },
+        "3": {
+          "name": "keyword.operator.type.ylang"
+        },
+        "4": {
+          "name": "storage.type.primitive.ylang"
+        },
+        "5": {
+          "name": "storage.type.compound.ylang"
+        },
+        "6": {
           "name": "entity.name.type.ylang"
         }
       }

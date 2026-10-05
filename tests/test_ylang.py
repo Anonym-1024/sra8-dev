@@ -154,6 +154,9 @@ class Diagnostics(unittest.TestCase):
         "@main impl a: fn(x: int8) {}\n": "takes no parameters",
         "impl g: fn() {}\nimpl f: fn() { var p: *fn() = g; }\n": "@ptr",
         "decl t: type;\nvar v: t = undefined;\n": "incomplete type",
+        "impl f: fn(a: int8) returns int16 { return @cast(int16)a; }\n": "@cast(T, x)",
+        "impl f: fn(p: *int8) returns *uint8 { return @as(*uint8 p); }\n": "@as(T, x)",
+        "var x: type = undefined;\n": "expected a type, found 'type'",
     }
 
     def test_recursion_is_not_checked(self):

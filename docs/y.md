@@ -225,7 +225,7 @@ multiplied by the size of `T`, so the address is `p + i × @sizeof(T)`
 (with `p: [*]int16`, `p[3]` is 6 bytes after `p`), and
 `@ptr(p[i])` is that address as a `[*]T`, so `p = @ptr(p[1]);` steps to
 the next element. A `*[n]T` converts to `[*]T` implicitly (8.2); a `*T`
-does not, because it promises a single `T` (`@as([*]T)p` if needed).
+does not, because it promises a single `T` (`@as([*]T, p)` if needed).
 
 ### 5.4 Arrays
 
@@ -271,12 +271,15 @@ function itself (`f(x)`, 11.9) and cannot be dereferenced. Two function types ar
 same if their parameter types and their result types are equal; parameter
 names do not matter.
 
-### 5.7 `opaque` and `type`
+### 5.7 `opaque`, and the keyword `type`
 
 - `opaque` is "something of unknown type". It may only appear as
   `*opaque` (or behind further pointers).
-- `type` is the type of type names. It exists only at compile time and
-  appears in one place: `decl name: type;` (7.2).
+- `type` is **not a type** but a keyword. It defines a type name,
+  `type name = …;` (7.5), and declares one that is defined later:
+  `decl name: type;` (7.2), where it stands in place of a type and makes
+  `name` a type name instead of a variable or function. It cannot be used
+  anywhere else a type is written.
 
 ### 5.8 Type syntax
 
@@ -306,7 +309,6 @@ types are complete except:
 
 - function types,
 - `opaque`,
-- `type`,
 - a type name declared with `decl name: type;` until its `type name = …`
   definition (7.2).
 
@@ -526,7 +528,7 @@ constants have taken their type (8.1) and after pointer conversions:
 - **Indexing does not convert:** `x[i]` needs an array value or a `[*]T`.
   An element of an array behind `p: *[n]T` is written `[p][i]`.
 - **Mixed integer widths or signedness** are not converted: `a + b` with
-  `a: int8`, `b: int16` is an error; write `@cast(int16)a + b`.
+  `a: int8`, `b: int16` is an error; write `@cast(int16, a) + b`.
 
 ### 8.4 Constant expressions
 
@@ -694,7 +696,7 @@ right**: in `a | b & c` the `|` comes first.
 | Level | Operators | Operands |
 |---|---|---|
 | 1 | `f(…)`, `x[i]`, `x.f` (postfix) | |
-| 2 | `-x`, `~x`, `@as(T)x`, `@cast(T)x` (prefix) | |
+| 2 | `-x`, `~x` (prefix) | |
 | 3 | `&`, `\|`, `^`, `shl`, `shr`, `sar`, `rol`, `ror` | values |
 | 4 | `*`, `/`, `%` | values |
 | 5 | `+`, `-` | values |
@@ -711,7 +713,8 @@ Consequences worth knowing:
 - A comparison cannot be the operand of another comparison
   (`a lt b lt c` is an error, because a condition is not a value).
 - Parentheses group as usual. `[ … ]` (dereference), `@ptr( … )`,
-  `@sizeof( … )` and `@bool( … )` are primary expressions.
+  `@sizeof( … )`, `@bool( … )`, `@as( … , … )` and `@cast( … , … )` are
+  primary expressions.
 
 ### 11.3 Arithmetic
 
@@ -793,13 +796,13 @@ which arguments are evaluated is unspecified.
 
 | Builtin | Meaning |
 |---|---|
-| `@bool(c)` | The logic expression `c` (a condition, 11.1) as a `bool`: `true` if it holds. An integer operand is an error; integers become `bool` only through `@cast(bool)x`. |
+| `@bool(c)` | The logic expression `c` (a condition, 11.1) as a `bool`: `true` if it holds. An integer operand is an error; integers become `bool` only through `@cast(bool, x)`. |
 | `@sizeof(T)` | The size of the complete type `T` in bytes: a constant (8.1). Only a type is accepted, not an expression. |
 | `@ptr(x)` | The address of `x` (11.7). |
-| `@cast(T)x` | A **converted copy** of `x` (below). |
-| `@as(T)x` | The bytes of `x` **reinterpreted** as `T`. Valid between any two types; nothing is checked. If the sizes differ, the result is defined by the implementation (for example, the bytes at the address of `x` read as a `T`, which may read or overwrite neighbouring memory). |
+| `@cast(T, x)` | A **converted copy** of `x` (below). |
+| `@as(T, x)` | The bytes of `x` **reinterpreted** as `T`. Valid between any two types; nothing is checked. If the sizes differ, the result is defined by the implementation (for example, the bytes at the address of `x` read as a `T`, which may read or overwrite neighbouring memory). |
 
-`@cast(T)x` conversions:
+`@cast(T, x)` conversions:
 
 | From | To | Result |
 |---|---|---|
@@ -811,9 +814,11 @@ which arguments are evaluated is unspecified.
 
 Any other `@cast` is an error.
 
-`@as(T)` and `@cast(T)` are prefix operators of level 2:
-`@cast(int16)a + b` is `(@cast(int16)a) + b`, and `@as(*int8)p[i]`
-reinterprets `p[i]`.
+`@as(T, x)` and `@cast(T, x)` are primary expressions, written like a
+call with a type as the first argument; the second is any expression. The
+parentheses delimit the operand: `@cast(int16, a + b)` converts the sum,
+and postfix operators apply to the result: `@as([*]int8, p)[i]` indexes
+the reinterpreted pointer.
 
 ---
 
@@ -905,7 +910,6 @@ if            = "if" "(" expr ")" block [ "else" ( if | block ) ] ;
 
 expr          = expr binary_op expr
               | ( "-" | "~" | "not" ) expr
-              | ( "@as" | "@cast" ) "(" type ")" expr
               | postfix ;
 binary_op     = "and" | "or" | "eq" | "ne" | "lt" | "le" | "gt" | "ge"
               | "+" | "-" | "*" | "/" | "%"
@@ -920,7 +924,8 @@ primary       = int_lit | char_lit | string_lit | sstring_lit
               | "[" expr "]"
               | "@ptr" "(" expr ")"
               | "@sizeof" "(" type ")"
-              | "@bool" "(" expr ")" ;
+              | "@bool" "(" expr ")"
+              | ( "@as" | "@cast" ) "(" type "," expr ")" ;
 
 init          = "{" ( init_list | field_list ) [ "," ] "}" ;
 init_list     = elem { "," elem } [ "," "_" ] ;
@@ -929,8 +934,8 @@ field_list    = ident "=" elem { "," ident "=" elem } ;
 ```
 
 Types and expressions never appear in the same position: after `:`, after
-`returns`, after the `=` of `type`, and inside `@sizeof( )`, `@as( )` and
-`@cast( )` there is a type,
+`returns`, after the `=` of `type`, inside `@sizeof( )`, and as the first
+argument of `@as( , )` and `@cast( , )` there is a type,
 everywhere else an expression. `[` therefore starts an array or pointer
 prefix in a type and a dereference in an expression, without ambiguity.
 

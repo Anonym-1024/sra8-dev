@@ -81,14 +81,14 @@ impl print: fn(s: [*]char) {
 }
 
 impl arithmetic: fn(a: int8, b: uint16, w: word) returns uint16 {
-    var x: uint16 = @cast(uint16)a + b * 3 / 2 % 7;
+    var x: uint16 = @cast(uint16, a) + b * 3 / 2 % 7;
     x = x & 0x0F | 0b1010 ^ 0o17;
     x = ~x shl 2 shr 1;
     x = x rol 4 ror 0d3;
     var s: int8 = a sar 1;
     var n: uint8 = @sizeof(point) * 4 + 1;
-    var big: int32 = @cast(int32)s;
-    var bits: uint16 = @as(uint16)w;
+    var big: int32 = @cast(int32, s);
+    var bits: uint16 = @as(uint16, w);
     var low: uint8 = w.bytes[0];
     var same: bool = @bool(a eq 0 and not (b ne 0 or x gt 3));
     var c: char = 'a';
@@ -101,7 +101,7 @@ impl arithmetic: fn(a: int8, b: uint16, w: word) returns uint16 {
         x /= 2;
     }
     _ = big;
-    return x + @cast(uint16)n + @cast(uint16)low + @cast(uint16)c + @cast(uint16)nl + bits;
+    return x + @cast(uint16, n) + @cast(uint16, low) + @cast(uint16, c) + @cast(uint16, nl) + bits;
 }
 
 impl pointers: fn(p: *[4]int8, many: [*]int8, f: *fn(c: char)) {
@@ -110,10 +110,10 @@ impl pointers: fn(p: *[4]int8, many: [*]int8, f: *fn(c: char)) {
     var third: int8 = many[2];
     many = @ptr(many[1]);                 // step to the next element
     var any: *opaque = p;
-    var back: *int8 = @as(*int8)any;
+    var back: *int8 = @as(*int8, any);
     var where: addr = back;
     var distance: addr = where - p;
-    many[3] = first + [second] + third + @cast(int8)distance;
+    many[3] = first + [second] + third + @cast(int8, distance);
     if (any ne nullptr and where gt 0x1000) {
         f('x');
     }
@@ -122,7 +122,7 @@ impl pointers: fn(p: *[4]int8, many: [*]int8, f: *fn(c: char)) {
 // a function that calls itself must be @recursive (so must its decl)
 @recursive impl count_down: fn(n: uint8) returns uint16 {
     if (n eq 0) { return 0; }
-    return @cast(uint16)n + count_down(n - 1);
+    return @cast(uint16, n) + count_down(n - 1);
 }
 
 impl search: fn(rows: *[2][3]int8, wanted: int8) returns bool {

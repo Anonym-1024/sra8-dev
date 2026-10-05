@@ -81,7 +81,7 @@ sra8-objdump -d -t terminal.o
 | `sra8-as` | `.s` to relocatable `.o` | [docs/asm.md](docs/asm.md) |
 | `sra8-ld` | objects plus linker script to `.bin`, `.mem` or Intel HEX, with a map | [docs/ld.md](docs/ld.md) |
 | `sra8-objdump` | disassembles objects and images into source that assembles again; dumps sections, exports, imports and relocations | `sra8-objdump --help` |
-| `ylangc` | Y to assembly (version 0.4: simple, size-optimised) | [docs/ylangc.md](docs/ylangc.md) |
+| `ylangc` | Y to assembly (version 0.4.1: simple, size-optimised) | [docs/ylangc.md](docs/ylangc.md) |
 
 Further documentation: [docs/isa.md](docs/isa.md) is the instruction set,
 generated from `sra8/isa.py`. [docs/obj.md](docs/obj.md) is the object

@@ -63,7 +63,7 @@ def grammar() -> dict:
         "scopeName": "source.ylang",
         "patterns": [{"include": "#" + p} for p in (
             "comment", "preprocessor", "string", "character", "number",
-            "declaration", "loop-name", "parameter", "type-after-colon", "returns", "prefixed-type",
+            "declaration", "loop-name", "parameter", "type-after-colon", "returns", "cast-type", "prefixed-type",
             "keyword", "type", "constant", "builtin", "call", "operator", "punctuation")],
         "repository": {
             "comment": {"patterns": [
@@ -132,7 +132,12 @@ def grammar() -> dict:
             "returns": {"match": r"\b(returns)\b\s*(" + PREFIXES + r"*)\s*" + tail + "?",
                         "captures": {"1": {"name": "keyword.other.returns.ylang"}, "2": prefix_op,
                                      **type_scopes(3)}},
-            # *T [*]T [n]T anywhere else, e.g. in fn(*user, [*]char) or @as(*[4]int8)p
+            # @as(T, x) and @cast(T, x): the first argument is a type
+            "cast-type": {"match": r"(@(?:as|cast))\s*(\()\s*(" + PREFIXES + r"*)\s*" + tail,
+                          "captures": {"1": {"name": "support.function.builtin.ylang"},
+                                       "2": {"name": "punctuation.parenthesis.ylang"},
+                                       "3": prefix_op, **type_scopes(4)}},
+            # *T [*]T [n]T anywhere else, e.g. in fn(*user, [*]char) or @as(*[4]int8, p)
             "prefixed-type": {"match": r"(" + PREFIXES + r"+)" + tail,
                               "captures": {"1": prefix_op, **type_scopes(2)}},
             "keyword": {"patterns": [

@@ -26,7 +26,7 @@ impl flip: fn(p: point) returns point { return {x = p.y, y = p.x}; }
     if (n eq 0) { return; }
     var local: uint16 = 0;
     sum_into(n - 1, @ptr(local));
-    [acc] += local + @cast(uint16)n;
+    [acc] += local + @cast(uint16, n);
 }
 
 // a recursive function with a frame larger than 2 KiB: far offsets
@@ -34,9 +34,9 @@ impl flip: fn(p: point) returns point { return {x = p.y, y = p.x}; }
     var buf: [2100]uint8 = {0, _};
     buf[2099] = n;
     buf[0] = n + 1;
-    if (n eq 0) { return @cast(uint16)buf[2099]; }
+    if (n eq 0) { return @cast(uint16, buf[2099]); }
     var r: uint16 = deepframe(n - 1);
-    return r + @cast(uint16)buf[2099] + @cast(uint16)buf[0];
+    return r + @cast(uint16, buf[2099]) + @cast(uint16, buf[0]);
 }
 
 impl call_int: fn(f: *fn(x: int16) returns int16, v: int16) returns int16 { return f(v); }
@@ -45,21 +45,21 @@ impl flip1: fn(p: point) returns point { return rflip(p, 1); }
 
 @main
 impl start: fn() {
-    out[0] = @cast(int32)call_int(@ptr(twice), 21);        // static frame through a pointer
-    out[1] = @cast(int32)call_int(@ptr(tri), 10);          // stack frame through a pointer
+    out[0] = @cast(int32, call_int(@ptr(twice), 21));        // static frame through a pointer
+    out[1] = @cast(int32, call_int(@ptr(tri), 10));          // stack frame through a pointer
     var q: point = call_pt(@ptr(flip), {x = 5, y = 7});
-    out[2] = @cast(int32)q.x * 100 + @cast(int32)q.y;
+    out[2] = @cast(int32, q.x) * 100 + @cast(int32, q.y);
     var r: point = rflip({x = 1, y = 2}, 3);
-    out[3] = @cast(int32)r.x * 100 + @cast(int32)r.y;
+    out[3] = @cast(int32, r.x) * 100 + @cast(int32, r.y);
     var r2: point = call_pt(@ptr(flip1), {x = 8, y = 9});
-    out[4] = @cast(int32)r2.x * 100 + @cast(int32)r2.y;
+    out[4] = @cast(int32, r2.x) * 100 + @cast(int32, r2.y);
     var total: uint16 = 0;
     sum_into(10, @ptr(total));
-    out[5] = @cast(int32)total;
-    out[6] = @cast(int32)deepframe(3);
+    out[5] = @cast(int32, total);
+    out[6] = @cast(int32, deepframe(3));
     var p: *big = @ptr(bigone);
     [p].tail = 0xBEEF;
     [p].pad[2999] = 0x5A;
-    out[7] = @cast(int32)[p].tail;
-    out[8] = @cast(int32)bigone.pad[2999];
+    out[7] = @cast(int32, [p].tail);
+    out[8] = @cast(int32, bigone.pad[2999]);
 }

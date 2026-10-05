@@ -250,8 +250,8 @@ Y = grammar("ylang", {
     "unary_expression": choice(
         prec(P["not"], seq(field("operator", "not"), field("operand", "$_expression"))),
         prec(P["prefix"], seq(field("operator", choice("-", "~")), field("operand", "$_expression")))),
-    "cast_expression": prec(P["prefix"], seq(field("operator", choice("@as", "@cast")), "(",
-                                             field("type", "$_type"), ")", field("operand", "$_expression"))),
+    "cast_expression": seq(field("operator", choice("@as", "@cast")), "(", field("type", "$_type"), ",",
+                           field("operand", "$_expression"), ")"),
     "call_expression": prec(P["postfix"], seq(field("function", "$_expression"), "$argument_list")),
     "argument_list": seq("(", comma_sep("$_value"), ")"),
     "index_expression": prec(P["postfix"], seq(field("object", "$_expression"), "[",

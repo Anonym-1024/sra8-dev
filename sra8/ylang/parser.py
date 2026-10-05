@@ -371,12 +371,6 @@ class Parser:
         if t.kind == "p" and t.text in ("-", "~"):
             self.take()
             return Node("unary", t.where, op=t.text, operand=self.prefix())
-        if t.kind == "builtin" and t.text in ("@as", "@cast"):
-            self.take()
-            self.expect("(")
-            ty = self.type_()
-            self.expect(")")
-            return Node(t.text[1:], t.where, type=ty, operand=self.prefix())
         return self.postfix()
 
     def postfix(self) -> Node:
@@ -438,6 +432,14 @@ class Parser:
                 ty = self.type_()
                 self.expect(")")
                 return Node("sizeof", w, type=ty)
+            if t.text in ("@as", "@cast"):              # @as(T, x)  @cast(T, x)
+                self.expect("(")
+                ty = self.type_()
+                if not self.accept(","):
+                    raise YError("%s takes a type and a value: %s(T, x)" % (t.text, t.text), self.tok.where)
+                e = self.expr()
+                self.expect(")")
+                return Node(t.text[1:], w, type=ty, operand=e)
             raise YError("'%s' cannot be used in an expression" % t.text, w)
         if t.kind == "p" and t.text == "{":
             raise YError("an initialiser '{…}' is only allowed where its type is known", w)

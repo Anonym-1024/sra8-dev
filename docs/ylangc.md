@@ -1,4 +1,4 @@
-# ylangc — the Y compiler, version 0.4
+# ylangc — the Y compiler, version 0.4.1
 
 ```
 ylangc [-o out.s] [-I dir]... [-D NAME[=text]]... file.y
@@ -9,7 +9,9 @@ One `.y` file in, one assembly file out (default name: the source name with
 printed as `file:line: error: text`; compilation stops at the first one.
 
 Version 0.4 is still simple, but tries to keep programs small (see "What
-it costs" below). It implements the language of [y.md](y.md) except:
+it costs" below). Version 0.4.1 writes the conversions as `@as(T, x)` and
+`@cast(T, x)`; the code it generates is that of 0.4. It implements the
+language of [y.md](y.md) except:
 
 - `@reg` is rejected;
 - there is no hardware access (ports, interrupts, inline assembly): call

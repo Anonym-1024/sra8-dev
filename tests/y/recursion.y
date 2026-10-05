@@ -20,7 +20,7 @@ var out: [16]int32 = {0, _};
 // keeps locals alive across its own call
 @recursive impl sumsq: fn(n: uint16) returns uint32 {
     if (n eq 0) { return 0; }
-    var mine: uint32 = @cast(uint32)n * @cast(uint32)n;
+    var mine: uint32 = @cast(uint32, n) * @cast(uint32, n);
     var rest: uint32 = sumsq(n - 1);
     return mine + rest;
 }
@@ -31,7 +31,7 @@ var tp: *fn(n: uint8) returns uint16 = @ptr(through);
 // calls itself through a pointer: it must be @recursive (nothing checks it)
 @recursive impl through: fn(n: uint8) returns uint16 {
     if (n eq 0) { return 1; }
-    var mine: uint16 = @cast(uint16)n;
+    var mine: uint16 = @cast(uint16, n);
     return mine + tp(n - 1) * 2;
 }
 
@@ -57,15 +57,15 @@ var tp: *fn(n: uint8) returns uint16 = @ptr(through);
 
 @main
 impl start: fn() {
-    out[0] = @cast(int32)swapper(1, 2, 3);
-    out[1] = @cast(int32)swapper(1, 2, 4);
+    out[0] = @cast(int32, swapper(1, 2, 3));
+    out[1] = @cast(int32, swapper(1, 2, 4));
     var r: point = pswap({x = 1, y = 3}, {x = 2, y = 4}, 5);
-    out[2] = @cast(int32)r.x;
-    out[3] = @cast(int32)r.y;
-    out[4] = @as(int32)sumsq(20);
-    out[5] = @cast(int32)through(5);
-    out[6] = @cast(int32)ping(7, 1);
+    out[2] = @cast(int32, r.x);
+    out[3] = @cast(int32, r.y);
+    out[4] = @as(int32, sumsq(20));
+    out[5] = @cast(int32, through(5));
+    out[6] = @cast(int32, ping(7, 1));
     var cnt: uint8 = 0;
     depth(200, @ptr(cnt));
-    out[7] = @cast(int32)cnt;
+    out[7] = @cast(int32, cnt);
 }
